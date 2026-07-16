@@ -509,6 +509,7 @@ input[type=number]:disabled {
         </div>
         <div class="filter-actions">
           <button type="button" class="export-csv-btn" onclick="exportCSV()">&#8681; Exportar CSV</button>
+          <button type="button" class="export-csv-btn" id="exportSheetBtn" onclick="exportToSheet()">&#9638; Planilha Google</button>
           <button type="button" class="clear-filters-btn" onclick="clearFilters()">Limpar filtros</button>
         </div>
       </div>
@@ -985,22 +986,49 @@ function downloadCsv(filename, lines) {
   URL.revokeObjectURL(url);
 }
 
-function exportCSV() {
+function buildExportData() {
   var rows = state.profRows.filter(passesFilter);
-  if (!rows.length) { alert('Nenhum registro para exportar com os filtros atuais.'); return; }
-
   var header = ['Unidade', 'Mês', 'Ano', 'Matrícula', 'Apelido', 'Professor', 'Nível',
     'Horas Turmas', 'Horas Turmas Sáb.', 'Ativ. Extras', 'Subs.', 'Faltas Desc.', 'Faltas Abon.',
     'Top Special', 'Subs. Outra Unid.', 'Faltas Desc. (dias)', 'Faltas Abon. (dias)'];
-
-  var lines = [header.map(csvEscape).join(',')];
-  rows.forEach(function(r) {
-    var line = [r.unidade, MESES[r.mes - 1], r.ano, r.matricula, r.apelido, r.nome, r.nivel || '']
+  var data = rows.map(function(r) {
+    return [r.unidade, MESES[r.mes - 1], r.ano, r.matricula, r.apelido, r.nome, r.nivel || '']
       .concat(CAMPOS.map(function(c) { return Number(r[c.key]) || 0; }));
-    lines.push(line.map(csvEscape).join(','));
   });
+  return { header: header, rows: data };
+}
+
+function exportCSV() {
+  var ex = buildExportData();
+  if (!ex.rows.length) { alert('Nenhum registro para exportar com os filtros atuais.'); return; }
+
+  var lines = [ex.header.map(csvEscape).join(',')];
+  ex.rows.forEach(function(row) { lines.push(row.map(csvEscape).join(',')); });
 
   downloadCsv('horas_professores_' + new Date().toISOString().slice(0, 10) + '.csv', lines);
+}
+
+function exportToSheet() {
+  var ex = buildExportData();
+  if (!ex.rows.length) { alert('Nenhum registro para exportar com os filtros atuais.'); return; }
+
+  var btn = document.getElementById('exportSheetBtn');
+  var originalLabel = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = 'Gerando planilha…';
+
+  google.script.run
+    .withSuccessHandler(function(url) {
+      btn.disabled = false;
+      btn.innerHTML = originalLabel;
+      window.open(url, '_blank');
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btn.innerHTML = originalLabel;
+      alert('Erro ao gerar a planilha: ' + (err && err.message ? err.message : err));
+    })
+    .exportFilteredToSheet(TOKEN, { header: ex.header, rows: ex.rows, title: 'Horas de Professores' });
 }
 
 function renderUnitLabel() {
