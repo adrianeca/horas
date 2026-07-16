@@ -1,0 +1,1525 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Horas de Professores — BRASAS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy-900:#0a1628;--navy-800:#0f2035;--navy-700:#162d4a;
+  --navy-600:#1e3a5f;--navy-500:#2a4d76;--navy-400:#3d6b99;
+  --navy-300:#5a8aba;--navy-200:#89afd4;--navy-100:#c0d4e9;
+  --navy-50:#e8eff7;
+  --success-600:#15803d;--success-500:#22c55e;--success-100:#dcfce7;
+  --danger-600:#dc2626;--danger-500:#ef4444;--danger-100:#fee2e2;
+  --warning-500:#f59e0b;
+  --white:#fff;
+  --gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;
+  --gray-300:#cbd5e1;--gray-400:#94a3b8;--gray-500:#64748b;--gray-600:#475569;
+  --font:'DM Sans',-apple-system,sans-serif;
+  --radius:14px;
+  --shadow-sm:0 1px 3px rgba(10,22,40,.06);
+  --shadow-md:0 4px 16px rgba(10,22,40,.1);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:var(--gray-100);color:var(--navy-800);min-height:100vh;line-height:1.5}
+
+/* ── LOADING / ERROR SCREENS ────────────────────────── */
+.overlay {
+  position:fixed;inset:0;z-index:9999;
+  background:linear-gradient(135deg,var(--navy-900) 0%,var(--navy-700) 60%,var(--navy-600) 100%);
+  display:flex;align-items:center;justify-content:center;
+}
+.spinner {
+  width:44px;height:44px;
+  border:3px solid rgba(255,255,255,.15);border-top-color:#fff;
+  border-radius:50%;animation:spin .75s linear infinite;margin-bottom:4px;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.overlay p  {color:var(--navy-200);font-size:.9rem;margin-top:8px}
+.error-txt  {color:#fca5a5;font-weight:600;font-size:.95rem;max-width:360px;text-align:center;padding:0 16px}
+
+/* ── MAIN APP ──────────────────────────────────────────────── */
+#screenMain {display:none;flex-direction:column;min-height:100vh}
+
+/* HEADER */
+.app-header {
+  background:var(--navy-900);
+  border-bottom:1px solid rgba(255,255,255,.06);
+  padding:14px 32px;
+  display:flex;align-items:center;gap:20px;
+  box-shadow:0 2px 16px rgba(10,22,40,.35);
+  position:sticky;top:0;z-index:100;
+}
+.header-brand {display:flex;align-items:center;gap:12px}
+.header-brand-icon {
+  width:38px;height:38px;border-radius:10px;
+  background:linear-gradient(135deg,var(--navy-600),var(--navy-400));
+  display:flex;align-items:center;justify-content:center;font-size:1rem;
+}
+.header-brand h1 {font-size:1rem;font-weight:700;color:#fff;letter-spacing:-.01em}
+.header-brand p  {font-size:.7rem;color:var(--navy-300);margin-top:1px}
+.header-right {margin-left:auto;display:flex;align-items:center;gap:10px}
+.hub-back-btn {
+  display:flex;align-items:center;gap:5px;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+  border-radius:8px;padding:6px 13px;
+  font-family:var(--font);font-size:.8rem;font-weight:600;color:var(--navy-200);
+  text-decoration:none;cursor:pointer;transition:background .15s,color .15s;white-space:nowrap;
+}
+.hub-back-btn:hover{background:rgba(255,255,255,.14);color:#fff}
+.period-pill {
+  display:flex;align-items:center;gap:6px;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+  border-radius:8px;padding:7px 14px;
+}
+.period-pill span {font-size:.82rem;color:var(--navy-200);font-weight:500}
+.period-pill strong {font-size:.82rem;color:#fff;font-weight:700}
+.status-badge {
+  padding:5px 12px;border-radius:20px;
+  font-size:.7rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+}
+.badge-open   {background:rgba(34,197,94,.18);color:#4ade80;border:1px solid rgba(34,197,94,.25)}
+.badge-locked {background:rgba(239,68,68,.15);color:#f87171;border:1px solid rgba(239,68,68,.2)}
+.user-badge {
+  display:flex;align-items:center;gap:8px;
+  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);
+  border-radius:8px;padding:6px 14px;
+}
+.user-badge-name {font-size:.82rem;font-weight:600;color:#fff}
+.user-badge-unit {font-size:.7rem;color:var(--navy-300)}
+
+/* BODY — sem max-width: a tabela de lançamentos é larga e deve usar a tela toda */
+.app-body {flex:1;padding:28px 32px;width:100%;margin:0 auto}
+
+/* STAT PILLS */
+.stat-row {display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px}
+.stat-card {
+  display:inline-flex;align-items:center;gap:7px;
+  background:var(--white);border:1px solid var(--gray-200);
+  border-radius:999px;padding:9px 18px;box-shadow:var(--shadow-sm);
+}
+.stat-label {font-size:.67rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--gray-400)}
+.stat-value {font-size:.92rem;font-weight:700;color:var(--navy-800)}
+
+/* TABS PANEL */
+.tabs-panel {
+  background:var(--white);border:1px solid var(--gray-200);
+  border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow-sm);
+}
+.tab-panel {display:none}
+.tab-panel.active {display:block}
+
+/* VIEW SELECTOR (pílulas, acima do card de filtros) */
+.tabs-nav {display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+.tab-btn {
+  padding:10px 18px;border:1.5px solid var(--gray-200);border-radius:10px;
+  background:var(--white);cursor:pointer;
+  font-family:var(--font);font-size:.87rem;font-weight:700;color:var(--navy-700);
+  transition:background .15s,color .15s,border-color .15s;
+}
+.tab-btn:hover {border-color:var(--navy-300)}
+.tab-btn.active {background:var(--navy-900);border-color:var(--navy-900);color:#fff}
+
+/* TABLE CARD HEADER (título + subtítulo + contador de registros) */
+.table-card-header {
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;
+  padding:18px 20px;border-bottom:1px solid var(--gray-200);
+}
+.table-card-title {font-size:.98rem;font-weight:700;color:var(--navy-800)}
+.table-card-sub {font-size:.78rem;color:var(--gray-400);margin-top:2px}
+.records-pill {
+  background:var(--gray-100);color:var(--gray-600);border-radius:999px;
+  font-size:.78rem;font-weight:700;padding:5px 14px;white-space:nowrap;
+}
+
+/* ── SELECTOR BAR ──────────────────────────────────────────── */
+.selector-label {
+  display:block;font-size:.67rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.07em;color:var(--gray-400);margin-bottom:6px;
+}
+.emp-dropdown {
+  min-width:300px;padding:9px 12px;
+  border:1.5px solid var(--gray-200);border-radius:8px;
+  font-family:var(--font);font-size:.88rem;color:var(--navy-800);
+  background:var(--white);outline:none;cursor:pointer;
+  transition:border-color .15s,box-shadow .15s;
+}
+.emp-dropdown:focus {border-color:var(--navy-500);box-shadow:0 0 0 3px rgba(42,77,118,.12)}
+.emp-dropdown:disabled {background:var(--gray-100);color:var(--gray-400);cursor:not-allowed}
+
+/* ── MULTISELECT DROPDOWN (unidades/ano/mês) ──────────────────────── */
+.multiselect {position:relative}
+.multiselect-btn {
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  min-width:200px;text-align:left;
+}
+.multiselect-caret {font-size:.65rem;color:var(--gray-400)}
+.multiselect-panel {
+  display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:20;
+  min-width:220px;max-height:240px;overflow-y:auto;
+  background:var(--white);border:1.5px solid var(--gray-200);border-radius:8px;
+  box-shadow:0 8px 24px rgba(0,0,0,.14);padding:6px;
+}
+.multiselect-panel.open {display:block}
+.multiselect-option {
+  display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;
+  font-size:.85rem;color:var(--navy-800);cursor:pointer;
+}
+.multiselect-option:hover {background:var(--gray-50)}
+.multiselect-option input {cursor:pointer;margin:0}
+
+/* ── NO SELECTION HINT ─────────────────────────────────────── */
+.no-sel-hint {
+  text-align:center;padding:52px 24px;color:var(--gray-400);
+  font-size:.88rem;font-style:italic;
+}
+
+/* NUMBER INPUTS */
+input[type=number] {
+  padding:6px 8px;width:64px;
+  border:1px solid var(--gray-200);border-radius:7px;
+  text-align:center;font-family:var(--font);font-size:.84rem;color:var(--navy-800);
+  background:var(--white);transition:border-color .15s,box-shadow .15s;
+  -moz-appearance:textfield;appearance:textfield;
+}
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none}
+input[type=number]:focus {
+  outline:none;border-color:var(--navy-500);
+  box-shadow:0 0 0 3px rgba(42,77,118,.12);
+}
+input[type=number]:disabled {
+  background:var(--gray-100);color:var(--gray-300);
+  border-color:var(--gray-200);cursor:not-allowed;
+}
+
+/* FOOTER */
+.app-footer {
+  padding:20px 32px;width:100%;margin:0 auto;
+  display:flex;align-items:center;justify-content:flex-end;gap:14px;
+}
+.save-btn {
+  background:var(--navy-800);color:#fff;border:none;
+  padding:11px 28px;border-radius:8px;font-family:var(--font);
+  font-size:.9rem;font-weight:700;cursor:pointer;letter-spacing:.01em;
+  transition:background .15s;
+}
+.save-btn:hover:not(:disabled){background:var(--navy-600)}
+.save-btn:disabled{opacity:.45;cursor:not-allowed}
+.status-msg {
+  font-size:.84rem;font-weight:600;padding:8px 16px;border-radius:8px;display:none;
+}
+.status-msg.success{background:var(--success-100);color:var(--success-600);display:block}
+.status-msg.error  {background:var(--danger-100);color:var(--danger-600);display:block}
+.status-msg.saving {background:var(--navy-50);color:var(--navy-600);display:block}
+.lock-notice {
+  background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.2);
+  border-radius:8px;padding:9px 16px;color:var(--danger-600);
+  font-size:.82rem;font-weight:600;margin-right:auto;
+}
+
+/* FILTER CARD (card branco independente, acima das pills e da tabela) */
+.filter-card {
+  background:var(--white);border:1px solid var(--gray-200);
+  border-radius:var(--radius);padding:18px 20px;
+  margin-bottom:18px;box-shadow:var(--shadow-sm);
+}
+.filter-row {display:flex;gap:28px;flex-wrap:wrap;align-items:center}
+.clear-filters-btn {
+  margin-left:auto;
+  background:var(--white);border:1.5px solid var(--gray-200);border-radius:8px;
+  padding:9px 16px;font-family:var(--font);font-size:.85rem;font-weight:600;
+  color:var(--gray-500);cursor:pointer;transition:border-color .15s,color .15s;
+}
+.clear-filters-btn:hover {border-color:var(--navy-300);color:var(--navy-700)}
+
+.copy-btn {
+  display:inline-flex;align-items:center;gap:7px;
+  background:linear-gradient(135deg,var(--warning-500),#f97316);
+  border:1.5px solid transparent;border-radius:8px;
+  padding:8px 16px;font-family:var(--font);font-size:.82rem;font-weight:700;
+  color:#fff;cursor:pointer;white-space:nowrap;
+  box-shadow:0 2px 10px rgba(245,158,11,.35);
+  transition:background .15s,box-shadow .15s,transform .1s;
+  animation:copyPulse 2.2s ease-in-out infinite;
+}
+.copy-btn:hover {box-shadow:0 4px 14px rgba(245,158,11,.5);transform:translateY(-1px)}
+.copy-btn:active {transform:translateY(0)}
+.copy-btn-icon {font-size:.95rem;line-height:1}
+@keyframes copyPulse {
+  0%,100% {box-shadow:0 2px 10px rgba(245,158,11,.35)}
+  50%     {box-shadow:0 2px 16px rgba(245,158,11,.65)}
+}
+
+.row-del-btn {
+  background:none;border:none;cursor:pointer;
+  color:var(--gray-400);font-size:.95rem;line-height:1;
+  padding:5px 7px;border-radius:6px;
+  transition:background .15s,color .15s;
+}
+.row-del-btn:hover {background:var(--danger-100);color:var(--danger-600)}
+
+/* ── TABELA DE LANÇAMENTOS (estilo relatório, bordas leves) ───── */
+.hist-section {padding:20px;overflow-x:auto}
+.hist-table {
+  width:100%;border-collapse:collapse;font-size:.83rem;margin-bottom:16px;
+}
+.hist-table th, .hist-table td {
+  padding:10px 10px;text-align:center;
+  border-bottom:1px solid var(--gray-200);
+}
+.hist-table th {
+  background:var(--navy-800);color:#fff;font-weight:700;
+  font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;
+  padding:9px 8px;border-bottom:1px solid var(--navy-600);
+  border-left:1px solid rgba(255,255,255,.08);
+}
+.hist-table th:first-child {border-left:none}
+.hist-table td:nth-child(6), .hist-table th:nth-child(6) {text-align:left}
+.hist-table tbody tr:hover {background:var(--gray-50)}
+
+/* Linha com valor alterado após o lançamento original (fundo âmbar suave + selo) */
+.hist-table tbody tr.row-edited td {background:#fffbeb}
+.hist-table tbody tr.row-edited:hover td {background:#fef3c7}
+.edited-badge {
+  display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;
+  font-size:.66rem;font-weight:700;color:#b45309;background:#fef3c7;
+  vertical-align:1px;cursor:default;white-space:nowrap;
+}
+
+.entry-table td {padding:6px 6px}
+.nivel-pill {
+  display:inline-block;padding:2px 10px;border-radius:999px;
+  font-size:.74rem;font-weight:700;background:var(--navy-50);color:var(--navy-600);
+}
+
+.add-row-bar {
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:16px 20px;border-top:1px solid var(--gray-200);background:var(--gray-50);
+}
+.add-row-label {font-size:.84rem;font-weight:600;color:var(--gray-600)}
+
+/* ── ADMINISTRAÇÃO (liberações temporárias) ──────────────────── */
+.liber-card {
+  background:var(--white);border:1px solid var(--gray-200);border-radius:12px;
+  padding:20px;max-width:560px;
+}
+.liber-card-title {
+  font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--gray-400);margin-bottom:14px;
+}
+.liber-form {display:flex;gap:10px;flex-wrap:wrap}
+.liber-input {
+  flex:1;min-width:220px;padding:10px 14px;
+  border:1.5px solid var(--gray-200);border-radius:8px;
+  font-family:var(--font);font-size:.88rem;color:var(--navy-800);outline:none;
+  transition:border-color .15s,box-shadow .15s;
+}
+.liber-input:focus {border-color:var(--navy-500);box-shadow:0 0 0 3px rgba(42,77,118,.12)}
+.liber-status {font-size:.82rem;font-weight:600;margin-top:10px}
+.liber-status.error   {color:var(--danger-600)}
+.liber-status.success {color:var(--success-600)}
+.status-pill {padding:4px 12px;border-radius:20px;font-size:.72rem;font-weight:700;display:inline-block}
+.status-pill.ativa    {background:var(--success-100);color:var(--success-600)}
+.status-pill.expirada {background:var(--gray-100);color:var(--gray-400)}
+.status-pill.pendente  {background:#fef3c7;color:#b45309}
+.status-pill.aprovada  {background:var(--success-100);color:var(--success-600)}
+.status-pill.reprovada {background:var(--danger-100);color:var(--danger-600)}
+
+/* ── SOLICITAÇÕES DE LIBERAÇÃO (modais) ─────────────────────── */
+.modal-backdrop {
+  position:fixed;inset:0;z-index:5000;background:rgba(10,22,40,.45);
+  display:none;align-items:center;justify-content:center;padding:16px;
+}
+.modal-backdrop.open {display:flex}
+.modal-card {
+  background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow-md);
+  width:100%;max-width:500px;padding:26px;max-height:90vh;overflow-y:auto;
+}
+.modal-title {font-size:1.05rem;font-weight:700;color:var(--navy-800)}
+.modal-sub   {font-size:.84rem;color:var(--gray-500);margin-top:2px}
+.modal-label {
+  display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.06em;color:var(--gray-400);margin:16px 0 6px;
+}
+.modal-select, .modal-textarea {
+  width:100%;padding:10px 14px;border:1.5px solid var(--gray-200);border-radius:8px;
+  font-family:var(--font);font-size:.88rem;color:var(--navy-800);outline:none;background:var(--white);
+  transition:border-color .15s,box-shadow .15s;
+}
+.modal-textarea {resize:vertical;min-height:84px}
+.modal-select:focus, .modal-textarea:focus {border-color:var(--navy-500);box-shadow:0 0 0 3px rgba(42,77,118,.12)}
+.modal-actions {display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
+.btn-ghost {
+  background:none;border:1.5px solid var(--gray-200);border-radius:8px;
+  padding:10px 18px;font-family:var(--font);font-size:.86rem;font-weight:600;
+  color:var(--gray-500);cursor:pointer;transition:border-color .15s,color .15s;
+}
+.btn-ghost:hover {border-color:var(--gray-300);color:var(--navy-800)}
+.save-btn.btn-danger {background:var(--danger-600)}
+.save-btn.btn-danger:hover {background:var(--danger-500)}
+.modal-status {font-size:.82rem;font-weight:600;margin-top:12px}
+.modal-status.error {color:var(--danger-600)}
+.solic-pend-box {
+  background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;
+  padding:14px 16px;font-size:.86rem;color:#92400e;line-height:1.5;margin-top:16px;
+}
+.solic-summary {
+  background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;
+  padding:14px 16px;font-size:.85rem;color:var(--navy-800);margin-top:16px;line-height:1.6;
+}
+.solic-summary .lbl {color:var(--gray-500)}
+.solic-action-btn {
+  border:none;border-radius:7px;padding:6px 13px;font-family:var(--font);
+  font-size:.76rem;font-weight:700;cursor:pointer;transition:filter .15s;
+}
+.solic-action-btn:hover {filter:brightness(1.08)}
+.solic-action-btn.aprovar  {background:var(--success-100);color:var(--success-600)}
+.solic-action-btn.reprovar {background:var(--danger-100);color:var(--danger-600)}
+.solic-obs-cell {max-width:220px;white-space:normal;font-size:.78rem;color:var(--gray-600)}
+
+@media(max-width:900px){
+  .app-header{padding:12px 16px}
+  .app-body,.app-footer{padding-left:16px;padding-right:16px}
+  .header-right .period-pill{display:none}
+  .emp-dropdown{min-width:220px}
+}
+</style>
+</head>
+<body>
+
+<!-- ── LOADING ───────────────────────────────────────────── -->
+<div id="screenLoading" class="overlay" style="display:none">
+  <div class="spinner"></div>
+  <p>Carregando...</p>
+</div>
+
+<!-- ── ERRO ─────────────────────────────────────────────── -->
+<div id="screenError" class="overlay" style="display:none">
+  <div class="error-txt" id="errorMsg"></div>
+</div>
+
+<!-- ── MAIN APP ──────────────────────────────────────────── -->
+<div id="screenMain">
+
+  <header class="app-header">
+    <div class="header-brand">
+      <div class="header-brand-icon">🕒</div>
+      <div>
+        <h1>Horas de Professores</h1>
+        <p>BRASAS BI</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <button id="solicitarBtn" class="hub-back-btn" type="button" style="display:none" onclick="abrirSolicitacao()">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="3" y="7" width="10" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M5.5 7V4.75a2.5 2.5 0 015 0V7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Solicitar liberação
+      </button>
+      <button id="admPageBtn" class="hub-back-btn" type="button" style="display:none" onclick="switchTab('admpage')">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 10a2 2 0 100-4 2 2 0 000 4z" stroke="currentColor" stroke-width="1.5"/><path d="M13 8.6v-1.2l1.3-1-1-1.7-1.5.4a4.9 4.9 0 00-1-.6l-.3-1.5H8.5l-.3 1.5c-.36.14-.7.34-1 .6l-1.5-.4-1 1.7L6 7.4v1.2l-1.3 1 1 1.7 1.5-.4c.3.26.64.46 1 .6l.3 1.5h1.99l.3-1.5c.36-.14.7-.34 1-.6l1.5.4 1-1.7-1.3-1z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+        Liberação
+      </button>
+      <a id="hubBackBtn" class="hub-back-btn" href="#" target="_top">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Hub
+      </a>
+      <div class="period-pill">
+        <span>Período</span>
+        <strong id="hPeriodo">—</strong>
+      </div>
+      <span id="hBadge" class="status-badge" style="display:none"></span>
+      <div class="user-badge">
+        <div>
+          <div class="user-badge-name" id="hNome">—</div>
+          <div class="user-badge-unit" id="hUnidade">—</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="app-body">
+
+    <!-- Seletor de visão -->
+    <div class="tabs-nav">
+      <button class="tab-btn active" data-tab="professores" onclick="switchTab('professores')">Professores</button>
+    </div>
+
+    <!-- Filtros: unidade (dropdown multi-seleção, visível só com mais de 1) + ano + mês -->
+    <div class="filter-card">
+      <div class="filter-row">
+        <div id="unitFilterWrap" style="display:none">
+          <label class="selector-label">Unidades</label>
+          <div class="multiselect" id="unitFilterMulti">
+            <button type="button" class="emp-dropdown multiselect-btn" id="unitFilterBtn" onclick="toggleDropdown(event,'unitFilterPanel')">
+              <span id="unitFilterBtnLabel">Todas as unidades</span>
+              <span class="multiselect-caret">&#9662;</span>
+            </button>
+            <div class="multiselect-panel" id="unitFilterPanel"></div>
+          </div>
+        </div>
+        <div id="respFilterWrap" style="display:none">
+          <label class="selector-label">Responsável</label>
+          <div class="multiselect" id="respFilterMulti">
+            <button type="button" class="emp-dropdown multiselect-btn" id="respFilterBtn" style="min-width:170px" onclick="toggleDropdown(event,'respFilterPanel')">
+              <span id="respFilterBtnLabel">Todas</span>
+              <span class="multiselect-caret">&#9662;</span>
+            </button>
+            <div class="multiselect-panel" id="respFilterPanel"></div>
+          </div>
+        </div>
+        <div>
+          <label class="selector-label">Ano</label>
+          <div class="multiselect" id="yearFilterMulti">
+            <button type="button" class="emp-dropdown multiselect-btn" id="yearFilterBtn" style="min-width:140px" onclick="toggleDropdown(event,'yearFilterPanel')">
+              <span id="yearFilterBtnLabel">Todos os anos</span>
+              <span class="multiselect-caret">&#9662;</span>
+            </button>
+            <div class="multiselect-panel" id="yearFilterPanel"></div>
+          </div>
+        </div>
+        <div>
+          <label class="selector-label">Mês</label>
+          <div class="multiselect" id="monthFilterMulti">
+            <button type="button" class="emp-dropdown multiselect-btn" id="monthFilterBtn" style="min-width:180px" onclick="toggleDropdown(event,'monthFilterPanel')">
+              <span id="monthFilterBtnLabel">Todos os meses</span>
+              <span class="multiselect-caret">&#9662;</span>
+            </button>
+            <div class="multiselect-panel" id="monthFilterPanel"></div>
+          </div>
+        </div>
+        <button type="button" class="clear-filters-btn" onclick="clearFilters()">Limpar filtros</button>
+      </div>
+    </div>
+
+    <!-- Stat pills -->
+    <div class="stat-row">
+      <div class="stat-card">
+        <div class="stat-label">Unidade</div>
+        <div class="stat-value" id="sUnidade">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Período de referência</div>
+        <div class="stat-value" id="sPeriodo">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total de professores</div>
+        <div class="stat-value" id="sTotal">—</div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs-panel">
+
+      <!-- ── Professores ── -->
+      <div id="tabProfessores" class="tab-panel active">
+        <div class="table-card-header">
+          <div>
+            <div class="table-card-title">Horas de Professores</div>
+            <div class="table-card-sub">Mês de referência é sempre o mês corrente</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <button type="button" class="copy-btn" id="profCopyBtn" style="display:none" onclick="copyFromPreviousMonth()"><span class="copy-btn-icon">↻</span>Copiar mês anterior</button>
+            <span class="records-pill" id="profRecordsPill">0 registros</span>
+          </div>
+        </div>
+        <div id="profNoSel" class="no-sel-hint" style="display:none">Nenhum lançamento com os filtros atuais. Use "Adicionar" abaixo.</div>
+        <div class="hist-section">
+          <table class="hist-table entry-table">
+            <thead>
+              <tr>
+                <th>Unidade</th><th>Mês</th><th>Ano</th><th>Matrícula</th><th>Apelido</th><th>Professor</th><th>Nível</th>
+                <th>Horas Turmas</th><th>Horas Turmas Sáb.</th><th>Ativ. Extras</th><th>Subs.</th>
+                <th>Faltas Desc.</th><th>Faltas Abon.</th><th>Top Special</th><th>Subs. Outra Unid.</th>
+                <th>Faltas Desc. (dias)</th><th>Faltas Abon. (dias)</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="profTableBody"></tbody>
+          </table>
+        </div>
+        <div id="profAddBar" class="add-row-bar">
+          <select id="profAddUnit" class="emp-dropdown" style="min-width:180px" onchange="populateAddEmpDropdown()"></select>
+          <select id="profAddEmp" class="emp-dropdown" style="min-width:260px"></select>
+          <button class="save-btn" onclick="addRow()">+ Adicionar</button>
+        </div>
+      </div>
+
+      <!-- ── Administração (só admin) ── -->
+      <div id="tabAdmPage" class="tab-panel">
+        <div class="hist-section">
+
+          <div class="liber-card-title" style="margin-bottom:10px">Solicitações de Liberação</div>
+          <table class="hist-table" style="margin-bottom:32px">
+            <thead>
+              <tr><th>Solicitante</th><th>Motivo</th><th>Observações</th><th>Solicitada em</th><th>Status</th><th>Resposta</th></tr>
+            </thead>
+            <tbody id="solicitacoesBody"></tbody>
+          </table>
+
+          <div class="liber-card">
+            <div class="liber-card-title">Nova Liberação (válida até 23:59 de hoje)</div>
+            <div class="liber-form">
+              <input type="email" id="liberEmailInput" class="liber-input" placeholder="e-mail do usuário" onkeydown="if(event.key==='Enter') criarLiberacao()">
+              <button class="save-btn" onclick="criarLiberacao()">Liberar hoje</button>
+            </div>
+            <div id="liberStatus" class="liber-status"></div>
+          </div>
+
+          <table class="hist-table" style="margin-top:24px">
+            <thead>
+              <tr><th>E-mail</th><th>Liberado por</th><th>Expira em</th><th>Status</th></tr>
+            </thead>
+            <tbody id="liberacoesBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+  </div><!-- /app-body -->
+
+  <footer class="app-footer">
+    <span id="statusMsg" class="status-msg"></span>
+    <div id="lockNotice" class="lock-notice" style="display:none">
+      Prazo encerrado — formulário somente para visualização
+    </div>
+    <button id="saveBtn" class="save-btn" onclick="saveData()" style="display:none">
+      Salvar dados
+    </button>
+  </footer>
+
+  <!-- ── Modal: diretor solicita liberação ── -->
+  <div id="solicModal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-title">Solicitar Liberação de Edição</div>
+      <div class="modal-sub">O Departamento Pessoal será avisado por e-mail e você receberá a resposta (aprovação ou reprovação) também por e-mail.</div>
+
+      <div id="solicLoading" style="text-align:center;color:var(--gray-400);padding:24px 0;font-size:.86rem">Carregando...</div>
+
+      <div id="solicPend" class="solic-pend-box" style="display:none">
+        &#9203; Você já tem uma solicitação <strong>pendente</strong> aguardando resposta do DP.<br>
+        <span id="solicPendDetalhe" style="font-size:.8rem"></span>
+      </div>
+
+      <div id="solicForm" style="display:none">
+        <label class="modal-label" for="solicMotivo">Motivo</label>
+        <select id="solicMotivo" class="modal-select"></select>
+
+        <label class="modal-label" for="solicObs">Observações (opcional)</label>
+        <textarea id="solicObs" class="modal-textarea" placeholder="Detalhe aqui o que precisa ser lançado ou corrigido"></textarea>
+
+        <div id="solicStatus" class="modal-status"></div>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="fecharModal('solicModal')">Fechar</button>
+        <button id="solicEnviarBtn" class="save-btn" style="display:none" onclick="enviarSolicitacao()">Enviar solicitação</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Modal: DP responde a solicitação ── -->
+  <div id="respModal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-title" id="respTitle">Responder Solicitação</div>
+      <div class="modal-sub">O solicitante receberá a resposta por e-mail, incluindo sua observação.</div>
+
+      <div class="solic-summary" id="respResumo"></div>
+
+      <label class="modal-label" for="respObs">Observação do DP (opcional — vai no e-mail de resposta)</label>
+      <textarea id="respObs" class="modal-textarea" placeholder="Ex: liberado apenas para corrigir o lançamento de fulano"></textarea>
+
+      <div id="respStatus" class="modal-status"></div>
+
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="fecharModal('respModal')">Cancelar</button>
+        <button id="respConfirmBtn" class="save-btn" onclick="confirmarResposta()">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /screenMain -->
+
+<script>
+var TOKEN   = '<?= token ?>';
+var HUB_URL = 'https://script.google.com/a/macros/brasas.com/s/AKfycbyF7BArYMYFtcQY7_4RTGGPw89yNohAjR7eGptItP-EsnWhNfiZR2ISRaHdAkwlLSlr/exec';
+document.getElementById('hubBackBtn').href = HUB_URL;
+
+var state = {
+  user: null, period: null, funcs: null,
+  availableUnits: [],
+  unitFilter: [],   // vazio = mostra todas as unidades permitidas
+  respFilter: [],   // vazio = mostra todas as responsáveis do DP
+  yearFilter: [],   // vazio = mostra todos os anos
+  monthFilter: [],  // vazio = mostra todos os meses (número 1-12)
+  profRows: []
+};
+
+var MESES = ['01 Janeiro','02 Fevereiro','03 Março','04 Abril','05 Maio','06 Junho',
+             '07 Julho','08 Agosto','09 Setembro','10 Outubro','11 Novembro','12 Dezembro'];
+
+function normStr(s) {
+  return String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+// ── Responsáveis do DP por empresa: as listadas são da Jessica; todas as demais, da Priscila ──
+var RESPONSAVEIS = ['Jessica', 'Priscila'];
+var EMPRESAS_JESSICA = ['metodos', 'bod', 'gr', 'nt', 'vp', 'vo', 'nl', 'mr', 'tj', 'cg',
+                        'cx', 'dt', 'editora', 'ec new', 'rc'].map(normStr);
+
+function respDaUnidade(unidade) {
+  return EMPRESAS_JESSICA.indexOf(normStr(unidade)) !== -1 ? 'Jessica' : 'Priscila';
+}
+
+// Campos numéricos editáveis, na ordem em que aparecem na tabela / são salvos
+var CAMPOS = [
+  { key: 'horasTurmas',           cls: 'f-horas-turmas' },
+  { key: 'horasTurmasSabado',     cls: 'f-horas-turmas-sabado' },
+  { key: 'ativExtras',            cls: 'f-ativ-extras' },
+  { key: 'subs',                  cls: 'f-subs' },
+  { key: 'faltasDescontadas',     cls: 'f-faltas-descontadas' },
+  { key: 'faltasAbonadas',        cls: 'f-faltas-abonadas' },
+  { key: 'topSpecial',            cls: 'f-top-special' },
+  { key: 'subsOutrasUnidade',     cls: 'f-subs-outras-unidade' },
+  { key: 'faltasDescontadasDias', cls: 'f-faltas-descontadas-dias' },
+  { key: 'faltasAbonadasDias',    cls: 'f-faltas-abonadas-dias' }
+];
+
+// ── INIT ────────────────────────────────────────────────────
+
+window.onload = function() {
+  if (!TOKEN) { window.top.location.href = HUB_URL; return; }
+  show('screenLoading');
+  google.script.run
+    .withSuccessHandler(onUserLoaded)
+    .withFailureHandler(showError)
+    .getUserFromHub(TOKEN);
+};
+
+function onUserLoaded(user) {
+  state.user = user;
+  google.script.run
+    .withSuccessHandler(onUnidadesLoaded)
+    .withFailureHandler(showError)
+    .getUnidades(TOKEN);
+}
+
+function onUnidadesLoaded(units) {
+  state.availableUnits = units || [];
+  if (!state.availableUnits.length) {
+    showError(new Error('Nenhuma unidade disponível para este usuário.'));
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(onPeriodLoaded)
+    .withFailureHandler(showError)
+    .getCurrentPeriod(TOKEN);
+}
+
+function onPeriodLoaded(period) {
+  state.period = period;
+  google.script.run
+    .withSuccessHandler(onFuncsLoaded)
+    .withFailureHandler(showError)
+    .getFuncionarios(TOKEN);
+}
+
+function onFuncsLoaded(funcs) {
+  state.funcs = funcs;
+  google.script.run
+    .withSuccessHandler(onHorasLoaded)
+    .withFailureHandler(showError)
+    .getHorasData(TOKEN);
+}
+
+function onHorasLoaded(data) {
+  state.profRows = data.professores || [];
+  renderUI();
+}
+
+// ── RENDER ──────────────────────────────────────────────────
+
+function renderUI() {
+  var u = state.user;
+  var p = state.period;
+  var periodoStr = MESES[p.previsto.mes - 1] + ' / ' + p.previsto.ano;
+
+  document.getElementById('hPeriodo').textContent = periodoStr;
+  document.getElementById('sPeriodo').textContent  = periodoStr;
+  document.getElementById('hNome').textContent    = u.nome;
+
+  var badge = document.getElementById('hBadge');
+  badge.style.display = '';
+  if (p.locked) {
+    badge.textContent = 'Bloqueado';
+    badge.className   = 'status-badge badge-locked';
+    document.getElementById('lockNotice').style.display = '';
+    document.getElementById('solicitarBtn').style.display = '';
+  } else {
+    badge.textContent = 'Aberto';
+    badge.className   = 'status-badge badge-open';
+    document.getElementById('saveBtn').style.display = '';
+  }
+
+  document.getElementById('admPageBtn').style.display = (u.role === 'admin' || u.role === 'dp') ? '' : 'none';
+
+  renderFilterBar();
+  renderUnitLabel();
+  renderCounts();
+  renderProfTable();
+
+  hideAll();
+  document.getElementById('screenMain').style.display = 'flex';
+}
+
+// ── FILTROS (unidade/ano/mês, todos multi-seleção) ─────────────────
+
+function renderFilterBar() {
+  var wrap     = document.getElementById('unitFilterWrap');
+  var respWrap = document.getElementById('respFilterWrap');
+  if (state.availableUnits.length > 1) {
+    wrap.style.display = '';
+    renderMultiselectPanel('unitFilterPanel', state.availableUnits.map(function(un) { return { value: un, label: un }; }), state.unitFilter, 'onUnitFilterCheck');
+    updateUnitFilterLabel();
+
+    respWrap.style.display = '';
+    renderMultiselectPanel('respFilterPanel', RESPONSAVEIS.map(function(nm) { return { value: nm, label: nm }; }), state.respFilter, 'onRespFilterCheck');
+    updateRespFilterLabel();
+  } else {
+    wrap.style.display = 'none';
+    respWrap.style.display = 'none';
+  }
+
+  var years = distinctYears();
+  renderMultiselectPanel('yearFilterPanel', years.map(function(y) { return { value: String(y), label: String(y) }; }), state.yearFilter, 'onYearFilterCheck');
+  updateYearFilterLabel();
+
+  renderMultiselectPanel('monthFilterPanel', MESES.map(function(m, i) { return { value: String(i + 1), label: m }; }), state.monthFilter, 'onMonthFilterCheck');
+  updateMonthFilterLabel();
+}
+
+function renderMultiselectPanel(panelId, options, selectedValues, onCheckFnName) {
+  document.getElementById(panelId).innerHTML = options.map(function(opt) {
+    var checked = selectedValues.indexOf(opt.value) !== -1;
+    return '<label class="multiselect-option"><input type="checkbox" value="' + esc(opt.value) + '"' +
+      (checked ? ' checked' : '') + ' onchange="' + onCheckFnName + '()"> ' + esc(opt.label) + '</label>';
+  }).join('');
+}
+
+function multiselectValues(panelId) {
+  return Array.prototype.slice.call(document.querySelectorAll('#' + panelId + ' input:checked')).map(function(c) { return c.value; });
+}
+
+function distinctYears() {
+  var set = {};
+  state.profRows.forEach(function(r) { set[r.ano] = true; });
+  return Object.keys(set).map(Number).sort(function(a, b) { return a - b; });
+}
+
+function refreshFilteredViews() {
+  renderUnitLabel();
+  renderCounts();
+  renderProfTable();
+}
+
+function toggleDropdown(e, panelId) {
+  e.stopPropagation();
+  var panel  = document.getElementById(panelId);
+  var isOpen = panel.classList.contains('open');
+  document.querySelectorAll('.multiselect-panel.open').forEach(function(p) { p.classList.remove('open'); });
+  if (!isOpen) panel.classList.add('open');
+}
+
+document.addEventListener('click', function(e) {
+  document.querySelectorAll('.multiselect').forEach(function(wrap) {
+    if (!wrap.contains(e.target)) {
+      var panel = wrap.querySelector('.multiselect-panel');
+      if (panel) panel.classList.remove('open');
+    }
+  });
+});
+
+function updateUnitFilterLabel() {
+  var n = state.unitFilter.length;
+  document.getElementById('unitFilterBtnLabel').textContent =
+    n === 0 ? 'Todas as unidades' : (n === 1 ? state.unitFilter[0] : n + ' unidades selecionadas');
+}
+
+function updateYearFilterLabel() {
+  var n = state.yearFilter.length;
+  document.getElementById('yearFilterBtnLabel').textContent =
+    n === 0 ? 'Todos os anos' : (n === 1 ? state.yearFilter[0] : n + ' anos selecionados');
+}
+
+function updateMonthFilterLabel() {
+  var n = state.monthFilter.length;
+  document.getElementById('monthFilterBtnLabel').textContent =
+    n === 0 ? 'Todos os meses' : (n === 1 ? MESES[Number(state.monthFilter[0]) - 1] : n + ' meses selecionados');
+}
+
+function updateRespFilterLabel() {
+  var n = state.respFilter.length;
+  document.getElementById('respFilterBtnLabel').textContent =
+    n === 0 ? 'Todas' : state.respFilter.join(', ');
+}
+
+function onUnitFilterCheck() {
+  state.unitFilter = multiselectValues('unitFilterPanel');
+  updateUnitFilterLabel();
+  refreshFilteredViews();
+}
+
+function onRespFilterCheck() {
+  state.respFilter = multiselectValues('respFilterPanel');
+  updateRespFilterLabel();
+  refreshFilteredViews();
+}
+
+function onYearFilterCheck() {
+  state.yearFilter = multiselectValues('yearFilterPanel');
+  updateYearFilterLabel();
+  refreshFilteredViews();
+}
+
+function onMonthFilterCheck() {
+  state.monthFilter = multiselectValues('monthFilterPanel');
+  updateMonthFilterLabel();
+  refreshFilteredViews();
+}
+
+function clearFilters() {
+  state.unitFilter  = [];
+  state.respFilter  = [];
+  state.yearFilter  = [];
+  state.monthFilter = [];
+  renderFilterBar();
+  refreshFilteredViews();
+}
+
+// Unidades visíveis = filtro de unidades ∩ filtro de responsável (o filtro de responsável
+// também vale para contagens, "+ Adicionar", copiar mês anterior e salvamento)
+function visibleUnits() {
+  var base = state.unitFilter.length ? state.unitFilter : state.availableUnits;
+  if (state.respFilter.length) {
+    base = base.filter(function(u) { return state.respFilter.indexOf(respDaUnidade(u)) !== -1; });
+  }
+  return base;
+}
+
+function passesFilter(r) {
+  var units = visibleUnits().map(normStr);
+  if (units.indexOf(normStr(r.unidade)) === -1) return false;
+  if (state.yearFilter.length  && state.yearFilter.indexOf(String(r.ano)) === -1) return false;
+  if (state.monthFilter.length && state.monthFilter.indexOf(String(r.mes)) === -1) return false;
+  return true;
+}
+
+function renderUnitLabel() {
+  var list  = visibleUnits();
+  var label = list.length === 1 ? list[0] : (list.length + ' unidades');
+  document.getElementById('hUnidade').textContent = label;
+  document.getElementById('sUnidade').textContent = label;
+}
+
+function renderCounts() {
+  var units = visibleUnits().map(normStr);
+  var profs = state.funcs.professores.filter(function(e) { return units.indexOf(normStr(e.unidade)) !== -1; });
+  document.getElementById('sTotal').textContent = profs.length;
+}
+
+// ── TABELA DE PREENCHIMENTO (mostra só o que já foi lançado; "+ Adicionar" cria linha nova) ──
+
+function fmtRegistros(n) { return n + (n === 1 ? ' registro' : ' registros'); }
+
+function isSamePeriod(r, target) { return r.mes === target.mes && r.ano === target.ano; }
+
+// Atributos do <tr> e selo ao lado do nome para linhas editadas após o lançamento original
+function editedRowAttr(r) {
+  if (!r.editadoEm) return '';
+  return ' class="row-edited" title="Editado por ' + esc(r.editadoPor) + ' em ' + esc(r.editadoEm) + '"';
+}
+
+function editedBadge(r) {
+  if (!r.editadoEm) return '';
+  return ' <span class="edited-badge" title="Editado por ' + esc(r.editadoPor) + ' em ' + esc(r.editadoEm) + '">&#9998; editado</span>';
+}
+
+function numInputHtml(cls, val, editable) {
+  return '<input type="number" class="' + cls + '" min="0" step="0.5" value="' +
+    (Number(val) || 0) + '"' + (editable ? '' : ' disabled') + '>';
+}
+
+function renderRows(rows, p) {
+  return rows.map(function(r, i) {
+    var open = !p.locked && isSamePeriod(r, p.previsto);
+    var delCell = open
+      ? '<td><button type="button" class="row-del-btn" title="Excluir lançamento" onclick="deleteRow(' + i + ')">🗑</button></td>'
+      : '<td></td>';
+    var campoCells = CAMPOS.map(function(c) {
+      return '<td>' + numInputHtml(c.cls, r[c.key], open) + '</td>';
+    }).join('');
+    return '<tr' + editedRowAttr(r) + '>' +
+      '<td>' + esc(r.unidade) + '</td>' +
+      '<td>' + esc(MESES[r.mes - 1]) + '</td><td>' + r.ano + '</td>' +
+      '<td>' + esc(r.matricula) + '</td><td>' + esc(r.apelido) + '</td>' +
+      '<td>' + esc(r.nome) + editedBadge(r) + '</td>' +
+      '<td><span class="nivel-pill">' + esc(r.nivel || '—') + '</span></td>' +
+      campoCells +
+      delCell +
+      '</tr>';
+  }).join('');
+}
+
+function renderProfTable() {
+  var rows = state.profRows.filter(passesFilter);
+  var body = document.getElementById('profTableBody');
+
+  document.getElementById('profNoSel').style.display = rows.length ? 'none' : '';
+  document.getElementById('profRecordsPill').textContent = fmtRegistros(rows.length);
+
+  body.innerHTML = renderRows(rows, state.period);
+  renderAddControl();
+  renderCopyButton();
+}
+
+// ── COPIAR LANÇAMENTOS DO MÊS ANTERIOR (mesmos valores, editáveis depois) ──
+
+function prevPeriod(target) {
+  var mes = target.mes - 1, ano = target.ano;
+  if (mes < 1) { mes = 12; ano--; }
+  return { mes: mes, ano: ano };
+}
+
+// Lançamentos do mês anterior, dentro das unidades visíveis, que ainda não existem
+// no mês corrente e cujo professor continua ativo/cadastrado naquela unidade.
+function copyableEntries() {
+  var rows   = state.profRows;
+  var target = state.period.previsto;
+  var prev   = prevPeriod(target);
+  var units  = visibleUnits().map(normStr);
+
+  var existing = {};
+  rows.forEach(function(r) {
+    if (isSamePeriod(r, target)) existing[normStr(r.unidade) + '|' + r.matricula] = true;
+  });
+
+  var funcMap = {};
+  state.funcs.professores.forEach(function(e) {
+    funcMap[normStr(e.unidade) + '|' + e.matricula] = e;
+  });
+
+  return rows.filter(function(r) {
+    if (r.mes !== prev.mes || r.ano !== prev.ano) return false;
+    if (units.indexOf(normStr(r.unidade)) === -1) return false;
+    var key = normStr(r.unidade) + '|' + r.matricula;
+    if (existing[key]) return false;
+    return !!funcMap[key];
+  }).map(function(r) {
+    return { prevRow: r, emp: funcMap[normStr(r.unidade) + '|' + r.matricula] };
+  });
+}
+
+function renderCopyButton() {
+  var btn = document.getElementById('profCopyBtn');
+  if (state.period.locked) { btn.style.display = 'none'; return; }
+
+  var count = copyableEntries().length;
+  if (!count) { btn.style.display = 'none'; return; }
+  btn.style.display = '';
+  btn.innerHTML = '<span class="copy-btn-icon">↻</span>Copiar mês anterior (' + count + ')';
+}
+
+function copyFromPreviousMonth() {
+  var entries = copyableEntries();
+  if (!entries.length) return;
+
+  var target = state.period.previsto;
+  var msg = 'Copiar ' + entries.length + ' lançamento(s) do mês anterior para ' +
+    MESES[target.mes - 1] + ' / ' + target.ano + '? Você poderá editar os valores antes de salvar.';
+  if (!window.confirm(msg)) return;
+
+  entries.forEach(function(item) {
+    var r = item.prevRow, emp = item.emp;
+    var novo = {
+      unidade: emp.unidade, mes: target.mes, ano: target.ano,
+      matricula: emp.matricula, apelido: emp.apelido || '', nome: emp.nome, nivel: emp.nivel || '',
+      _new: true
+    };
+    CAMPOS.forEach(function(c) { novo[c.key] = r[c.key] || 0; });
+    state.profRows.push(novo);
+  });
+
+  state.profRows.sort(function(a, b) { return (a.ano - b.ano) || (a.mes - b.mes) || a.unidade.localeCompare(b.unidade, 'pt-BR') || a.nome.localeCompare(b.nome, 'pt-BR'); });
+
+  renderProfTable();
+  setStatus(entries.length + ' lançamento(s) copiado(s) do mês anterior. Revise e clique em "Salvar dados".', 'success');
+}
+
+// ── ADICIONAR PROFESSOR (só para o mês corrente, único período do controle) ──
+
+function renderAddControl() {
+  var bar = document.getElementById('profAddBar');
+
+  if (state.period.locked) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+
+  // Restrito às unidades visíveis no filtro atual, senão a linha adicionada ficaria escondida
+  var choices = visibleUnits();
+  var unitSel = document.getElementById('profAddUnit');
+  var prevVal = unitSel.value;
+  unitSel.innerHTML = choices.map(function(un) {
+    return '<option value="' + esc(un) + '">' + esc(un) + '</option>';
+  }).join('');
+  if (prevVal && choices.indexOf(prevVal) !== -1) unitSel.value = prevVal;
+
+  populateAddEmpDropdown();
+}
+
+function populateAddEmpDropdown() {
+  var unitSel = document.getElementById('profAddUnit');
+  var empSel  = document.getElementById('profAddEmp');
+  var unidade = normStr(unitSel.value);
+  var target  = state.period.previsto;
+
+  var already = {};
+  state.profRows.forEach(function(r) {
+    if (isSamePeriod(r, target) && normStr(r.unidade) === unidade) already[r.matricula] = true;
+  });
+
+  var allEmps = state.funcs.professores.filter(function(e) { return normStr(e.unidade) === unidade; });
+  var emps    = allEmps.filter(function(e) { return !already[e.matricula]; });
+
+  if (!allEmps.length) {
+    empSel.innerHTML = '<option value="">— Nenhum professor cadastrado nesta unidade —</option>';
+    empSel.disabled  = true;
+    return;
+  }
+  if (!emps.length) {
+    empSel.innerHTML = '<option value="">— Todos já lançados neste mês —</option>';
+    empSel.disabled  = true;
+    return;
+  }
+  empSel.disabled  = false;
+  empSel.innerHTML = '<option value="">— Selecione o professor —</option>' +
+    emps.map(function(e) { return '<option value="' + esc(e.matricula) + '">' + esc(e.nome) + (e.apelido ? ' (' + esc(e.apelido) + ')' : '') + '</option>'; }).join('');
+}
+
+function addRow() {
+  var unitSel = document.getElementById('profAddUnit');
+  var empSel  = document.getElementById('profAddEmp');
+  var unidade = unitSel.value;
+  var mat     = empSel.value;
+  if (!unidade || !mat) return;
+
+  var emp = state.funcs.professores.filter(function(e) { return e.matricula === mat && normStr(e.unidade) === normStr(unidade); })[0];
+  if (!emp) return;
+
+  var target = state.period.previsto;
+  var novo = {
+    unidade: unidade, mes: target.mes, ano: target.ano,
+    matricula: emp.matricula, apelido: emp.apelido || '', nome: emp.nome, nivel: emp.nivel || '',
+    _new: true
+  };
+  CAMPOS.forEach(function(c) { novo[c.key] = 0; });
+  state.profRows.push(novo);
+
+  state.profRows.sort(function(a, b) { return (a.ano - b.ano) || (a.mes - b.mes) || a.unidade.localeCompare(b.unidade, 'pt-BR') || a.nome.localeCompare(b.nome, 'pt-BR'); });
+
+  renderProfTable();
+}
+
+// ── EXCLUIR LANÇAMENTO (só do período aberto) ──────────────────
+
+// Copia os valores editados no DOM de volta para o state antes de redesenhar,
+// para não perder edições ainda não salvas nas outras linhas.
+function syncDomToState() {
+  var rows   = state.profRows.filter(passesFilter);
+  var rowEls = document.querySelectorAll('#profTableBody tr');
+  rows.forEach(function(r, i) {
+    if (!isOpenPeriod(r)) return;
+    var row = rowEls[i];
+    if (!row) return;
+    CAMPOS.forEach(function(c) { r[c.key] = rowValNum(row, c.cls); });
+  });
+}
+
+function findFilteredRow(idx) {
+  return state.profRows.filter(passesFilter)[idx];
+}
+
+function deleteRow(idx) {
+  var rows     = state.profRows;
+  var filtered = rows.filter(passesFilter);
+  var r        = filtered[idx];
+  if (!r) return;
+
+  var msg = 'Excluir o lançamento de ' + r.nome + ' (' + MESES[r.mes - 1] + ' / ' + r.ano + ')?';
+  if (!window.confirm(msg)) return;
+
+  syncDomToState();
+
+  function removeAndRender() {
+    var pos = rows.indexOf(r);
+    if (pos !== -1) rows.splice(pos, 1);
+    renderProfTable();
+  }
+
+  // Linha ainda não salva na planilha: basta remover da tela
+  if (r._new) {
+    removeAndRender();
+    setStatus('Linha removida.', 'success');
+    return;
+  }
+
+  setStatus('Excluindo...', 'saving');
+  google.script.run
+    .withSuccessHandler(function() {
+      removeAndRender();
+      setStatus('Lançamento excluído com sucesso!', 'success');
+    })
+    .withFailureHandler(function(err) {
+      setStatus('Erro: ' + (err.message || err), 'error');
+    })
+    .deleteHorasEntry({
+      token: TOKEN,
+      unidade: r.unidade, mes: r.mes, ano: r.ano, matricula: r.matricula
+    });
+}
+
+// ── TABS ────────────────────────────────────────────────────
+
+function switchTab(tab) {
+  var btns   = document.querySelectorAll('.tab-btn');
+  var panels = document.querySelectorAll('.tab-panel');
+  btns.forEach(function(b) { b.classList.toggle('active', b.getAttribute('data-tab') === tab); });
+  panels.forEach(function(p) { p.classList.remove('active'); });
+
+  var panelId = tab === 'professores' ? 'tabProfessores' : 'tabAdmPage';
+  document.getElementById(panelId).classList.add('active');
+
+  if (tab === 'admpage') loadLiberacoes();
+}
+
+// ── ADMINISTRAÇÃO (liberações temporárias de edição) ──────────
+
+function loadLiberacoes() {
+  document.getElementById('liberacoesBody').innerHTML =
+    '<tr><td colspan="4" style="text-align:center;color:var(--gray-400)">Carregando...</td></tr>';
+  document.getElementById('solicitacoesBody').innerHTML =
+    '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">Carregando...</td></tr>';
+  google.script.run
+    .withSuccessHandler(renderLiberacoes)
+    .withFailureHandler(showError)
+    .getLiberacoes(TOKEN);
+  google.script.run
+    .withSuccessHandler(renderSolicitacoes)
+    .withFailureHandler(showError)
+    .getSolicitacoes(TOKEN);
+}
+
+function renderLiberacoes(list) {
+  var body = document.getElementById('liberacoesBody');
+  if (!list || !list.length) {
+    body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--gray-400)">Nenhuma liberação concedida ainda</td></tr>';
+    return;
+  }
+  var now = new Date();
+  body.innerHTML = list.map(function(l) {
+    var ativa = new Date(l.expiraEm) > now;
+    return '<tr><td style="text-align:left">' + esc(l.email) + '</td><td style="text-align:left">' + esc(l.liberadoPor) + '</td>' +
+      '<td>' + fmtDateTime(l.expiraEm) + '</td>' +
+      '<td><span class="status-pill ' + (ativa ? 'ativa">Ativa' : 'expirada">Expirada') + '</span></td></tr>';
+  }).join('');
+}
+
+function fmtDateTime(d) {
+  d = new Date(d);
+  var pad = function(n) { return n < 10 ? '0' + n : n; };
+  return pad(d.getDate()) + '/' + pad(d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+function criarLiberacao() {
+  var input = document.getElementById('liberEmailInput');
+  var email = input.value.trim();
+  var status = document.getElementById('liberStatus');
+
+  if (!email || email.indexOf('@') === -1) {
+    status.textContent = 'Informe um e-mail válido.';
+    status.className   = 'liber-status error';
+    return;
+  }
+
+  status.textContent = 'Liberando...';
+  status.className   = 'liber-status';
+
+  google.script.run
+    .withSuccessHandler(function(list) {
+      input.value = '';
+      status.textContent = 'Liberação concedida com sucesso — válida até 23:59 de hoje!';
+      status.className   = 'liber-status success';
+      renderLiberacoes(list);
+    })
+    .withFailureHandler(function(err) {
+      status.textContent = 'Erro: ' + (err.message || err);
+      status.className   = 'liber-status error';
+    })
+    .criarLiberacao(TOKEN, email);
+}
+
+// ── SOLICITAÇÕES DE LIBERAÇÃO ───────────────────────────────
+
+var solicState = { lista: [], respondendo: null };
+
+function fecharModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+// -- lado do diretor --------------------------------------------------------
+
+function abrirSolicitacao() {
+  document.getElementById('solicModal').classList.add('open');
+  document.getElementById('solicLoading').style.display   = '';
+  document.getElementById('solicPend').style.display      = 'none';
+  document.getElementById('solicForm').style.display      = 'none';
+  document.getElementById('solicEnviarBtn').style.display = 'none';
+  document.getElementById('solicStatus').textContent      = '';
+  google.script.run
+    .withSuccessHandler(onSolicInfo)
+    .withFailureHandler(function(err) {
+      document.getElementById('solicLoading').textContent = 'Erro: ' + (err.message || err);
+    })
+    .getSolicitacaoInfo(TOKEN);
+}
+
+function onSolicInfo(info) {
+  document.getElementById('solicLoading').style.display = 'none';
+
+  if (info.pendente) {
+    var p = info.pendente;
+    document.getElementById('solicPend').style.display = '';
+    document.getElementById('solicPendDetalhe').innerHTML =
+      'Motivo: ' + esc(p.motivo) + ' &middot; Enviada em ' + fmtDateTime(p.criadoEm);
+    return;
+  }
+
+  var sel = document.getElementById('solicMotivo');
+  sel.innerHTML = '<option value="">— selecione o motivo —</option>' +
+    info.motivos.map(function(m) { return '<option value="' + esc(m) + '">' + esc(m) + '</option>'; }).join('');
+  document.getElementById('solicObs').value = '';
+  document.getElementById('solicForm').style.display      = '';
+  document.getElementById('solicEnviarBtn').style.display = '';
+}
+
+function enviarSolicitacao() {
+  var motivo = document.getElementById('solicMotivo').value;
+  var obs    = document.getElementById('solicObs').value.trim();
+  var status = document.getElementById('solicStatus');
+  var btn    = document.getElementById('solicEnviarBtn');
+
+  if (!motivo) {
+    status.textContent = 'Selecione um motivo.';
+    status.className   = 'modal-status error';
+    return;
+  }
+
+  status.textContent = 'Enviando...';
+  status.className   = 'modal-status';
+  btn.disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function(info) {
+      btn.disabled = false;
+      document.getElementById('solicForm').style.display = 'none';
+      btn.style.display = 'none';
+      onSolicInfo(info); // mostra o estado "pendente" recém-criado
+      setStatus('Solicitação enviada — o DP foi avisado por e-mail.', 'success');
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      status.textContent = 'Erro: ' + (err.message || err);
+      status.className   = 'modal-status error';
+    })
+    .criarSolicitacaoLiberacao(TOKEN, motivo, obs);
+}
+
+// -- lado do DP --------------------------------------------------------------
+
+function renderSolicitacoes(list) {
+  solicState.lista = list || [];
+  var body = document.getElementById('solicitacoesBody');
+  if (!solicState.lista.length) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">Nenhuma solicitação recebida ainda</td></tr>';
+    return;
+  }
+  body.innerHTML = solicState.lista.map(function(s) {
+    var resposta;
+    if (s.status === 'pendente') {
+      resposta =
+        '<button class="solic-action-btn aprovar" onclick="abrirResposta(\'' + esc(s.id) + '\', true)">Aprovar</button> ' +
+        '<button class="solic-action-btn reprovar" onclick="abrirResposta(\'' + esc(s.id) + '\', false)">Reprovar</button>';
+    } else {
+      resposta = '<div class="solic-obs-cell" style="margin:0 auto">' +
+        (s.respondidoEm ? fmtDateTime(s.respondidoEm) : '') +
+        (s.obsDP ? '<br>&ldquo;' + esc(s.obsDP) + '&rdquo;' : '') + '</div>';
+    }
+    return '<tr>' +
+      '<td style="text-align:left">' + esc(s.nome || s.email) +
+        '<br><span style="font-size:.74rem;color:var(--gray-400)">' + esc(s.email) + '</span></td>' +
+      '<td style="text-align:left">' + esc(s.motivo) + '</td>' +
+      '<td class="solic-obs-cell" style="text-align:left">' + (s.obs ? esc(s.obs) : '<span style="color:var(--gray-300)">—</span>') + '</td>' +
+      '<td>' + fmtDateTime(s.criadoEm) + '</td>' +
+      '<td style="text-align:center"><span class="status-pill ' + esc(s.status) + '">' +
+        s.status.charAt(0).toUpperCase() + s.status.slice(1) + '</span></td>' +
+      '<td>' + resposta + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function abrirResposta(id, aprovar) {
+  var s = null;
+  for (var i = 0; i < solicState.lista.length; i++) {
+    if (solicState.lista[i].id === id) { s = solicState.lista[i]; break; }
+  }
+  if (!s) return;
+
+  solicState.respondendo = { id: id, aprovar: aprovar };
+
+  document.getElementById('respTitle').textContent = aprovar ? 'Aprovar Solicitação' : 'Reprovar Solicitação';
+  document.getElementById('respResumo').innerHTML =
+    '<span class="lbl">Solicitante:</span> <strong>' + esc(s.nome || s.email) + '</strong><br>' +
+    '<span class="lbl">Motivo:</span> ' + esc(s.motivo) +
+    (s.obs ? '<br><span class="lbl">Observações:</span> ' + esc(s.obs) : '') +
+    (aprovar ? '<br><span class="lbl">Efeito:</span> edição liberada <strong>até 23:59 de hoje</strong>' : '');
+  document.getElementById('respObs').value = '';
+  document.getElementById('respStatus').textContent = '';
+
+  var btn = document.getElementById('respConfirmBtn');
+  btn.textContent = aprovar ? 'Aprovar e liberar' : 'Reprovar';
+  btn.className   = aprovar ? 'save-btn' : 'save-btn btn-danger';
+  btn.disabled    = false;
+
+  document.getElementById('respModal').classList.add('open');
+}
+
+function confirmarResposta() {
+  var r = solicState.respondendo;
+  if (!r) return;
+
+  var obsDP  = document.getElementById('respObs').value.trim();
+  var status = document.getElementById('respStatus');
+  var btn    = document.getElementById('respConfirmBtn');
+
+  status.textContent = r.aprovar ? 'Aprovando...' : 'Reprovando...';
+  status.className   = 'modal-status';
+  btn.disabled = true;
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      fecharModal('respModal');
+      renderSolicitacoes(res.solicitacoes);
+      renderLiberacoes(res.liberacoes);
+      setStatus(r.aprovar
+        ? 'Solicitação aprovada — liberação criada e solicitante avisado por e-mail.'
+        : 'Solicitação reprovada — solicitante avisado por e-mail.', 'success');
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      status.textContent = 'Erro: ' + (err.message || err);
+      status.className   = 'modal-status error';
+    })
+    .responderSolicitacao(TOKEN, r.id, r.aprovar, obsDP);
+}
+
+// ── SAVE ────────────────────────────────────────────────────
+
+function rowValNum(row, cls) {
+  var el = row.querySelector('.' + cls);
+  return el ? (Number(el.value) || 0) : 0;
+}
+
+function isOpenPeriod(r) {
+  return isSamePeriod(r, state.period.previsto);
+}
+
+function collectEntries(rowsFiltered, rowEls) {
+  var out = [];
+  rowsFiltered.forEach(function(r, i) {
+    if (!isOpenPeriod(r)) return; // só envia o período aberto (Horas só tem Previsto)
+    var row = rowEls[i];
+    var entry = { unidade: r.unidade, matricula: r.matricula, apelido: r.apelido, nome: r.nome, nivel: r.nivel, mes: r.mes, ano: r.ano };
+    CAMPOS.forEach(function(c) { entry[c.key] = rowValNum(row, c.cls); });
+    out.push(entry);
+  });
+  return out;
+}
+
+function saveData() {
+  setStatus('Salvando...', 'saving');
+  document.getElementById('saveBtn').disabled = true;
+
+  // Importante: usa os MESMOS índices que renderProfTable usou pra desenhar
+  // (rows filtradas), já que as linhas no DOM só existem para o que passou no filtro atual.
+  var entries = collectEntries(state.profRows.filter(passesFilter), document.querySelectorAll('#profTableBody tr'));
+
+  google.script.run
+    .withSuccessHandler(function() {
+      setStatus('Dados salvos com sucesso!', 'success');
+      document.getElementById('saveBtn').disabled = false;
+      reloadData();
+    })
+    .withFailureHandler(function(err) {
+      setStatus('Erro: ' + (err.message || err), 'error');
+      document.getElementById('saveBtn').disabled = false;
+    })
+    .saveHorasData({
+      token: TOKEN,
+      professores: entries
+    });
+}
+
+// Recarrega os dados após salvar, para refletir o estado real da planilha
+function reloadData() {
+  google.script.run
+    .withSuccessHandler(onHorasLoaded)
+    .withFailureHandler(showError)
+    .getHorasData(TOKEN);
+}
+
+// ── UTILS ───────────────────────────────────────────────────
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function show(id) {
+  hideAll();
+  var el = document.getElementById(id);
+  if (el) el.style.display = (id === 'screenMain') ? 'flex' : '';
+}
+
+function hideAll() {
+  ['screenLoading','screenError','screenMain'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+}
+
+function setStatus(msg, type) {
+  var el = document.getElementById('statusMsg');
+  el.textContent = msg;
+  el.className   = 'status-msg ' + type;
+}
+
+function showError(err) {
+  show('screenError');
+  document.getElementById('errorMsg').textContent =
+    (err && err.message) ? err.message : String(err);
+}
+</script>
+</body>
+</html>
