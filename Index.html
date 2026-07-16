@@ -490,6 +490,16 @@ input[type=number]:disabled {
             <div class="multiselect-panel" id="monthFilterPanel"></div>
           </div>
         </div>
+        <div>
+          <label class="selector-label">Apelido</label>
+          <div class="multiselect" id="apelidoFilterMulti">
+            <button type="button" class="emp-dropdown multiselect-btn" id="apelidoFilterBtn" style="min-width:180px" onclick="toggleDropdown(event,'apelidoFilterPanel')">
+              <span id="apelidoFilterBtnLabel">Todos os apelidos</span>
+              <span class="multiselect-caret">&#9662;</span>
+            </button>
+            <div class="multiselect-panel" id="apelidoFilterPanel"></div>
+          </div>
+        </div>
         <button type="button" class="clear-filters-btn" onclick="clearFilters()">Limpar filtros</button>
       </div>
     </div>
@@ -655,6 +665,7 @@ var state = {
   respFilter: [],   // vazio = mostra todas as responsáveis do DP
   yearFilter: [],   // vazio = mostra todos os anos
   monthFilter: [],  // vazio = mostra todos os meses (número 1-12)
+  apelidoFilter: [], // vazio = mostra todos os apelidos
   profRows: []
 };
 
@@ -799,6 +810,10 @@ function renderFilterBar() {
 
   renderMultiselectPanel('monthFilterPanel', MESES.map(function(m, i) { return { value: String(i + 1), label: m }; }), state.monthFilter, 'onMonthFilterCheck');
   updateMonthFilterLabel();
+
+  var apelidos = distinctApelidos();
+  renderMultiselectPanel('apelidoFilterPanel', apelidos.map(function(a) { return { value: a, label: a }; }), state.apelidoFilter, 'onApelidoFilterCheck');
+  updateApelidoFilterLabel();
 }
 
 function renderMultiselectPanel(panelId, options, selectedValues, onCheckFnName) {
@@ -817,6 +832,12 @@ function distinctYears() {
   var set = {};
   state.profRows.forEach(function(r) { set[r.ano] = true; });
   return Object.keys(set).map(Number).sort(function(a, b) { return a - b; });
+}
+
+function distinctApelidos() {
+  var set = {};
+  state.profRows.forEach(function(r) { if (r.apelido) set[r.apelido] = true; });
+  return Object.keys(set).sort(function(a, b) { return a.localeCompare(b, 'pt-BR'); });
 }
 
 function refreshFilteredViews() {
@@ -866,6 +887,12 @@ function updateRespFilterLabel() {
     n === 0 ? 'Todas' : state.respFilter.join(', ');
 }
 
+function updateApelidoFilterLabel() {
+  var n = state.apelidoFilter.length;
+  document.getElementById('apelidoFilterBtnLabel').textContent =
+    n === 0 ? 'Todos os apelidos' : (n === 1 ? state.apelidoFilter[0] : n + ' apelidos selecionados');
+}
+
 function onUnitFilterCheck() {
   state.unitFilter = multiselectValues('unitFilterPanel');
   updateUnitFilterLabel();
@@ -890,11 +917,18 @@ function onMonthFilterCheck() {
   refreshFilteredViews();
 }
 
+function onApelidoFilterCheck() {
+  state.apelidoFilter = multiselectValues('apelidoFilterPanel');
+  updateApelidoFilterLabel();
+  refreshFilteredViews();
+}
+
 function clearFilters() {
-  state.unitFilter  = [];
-  state.respFilter  = [];
-  state.yearFilter  = [];
-  state.monthFilter = [];
+  state.unitFilter    = [];
+  state.respFilter    = [];
+  state.yearFilter    = [];
+  state.monthFilter   = [];
+  state.apelidoFilter = [];
   renderFilterBar();
   refreshFilteredViews();
 }
@@ -914,6 +948,7 @@ function passesFilter(r) {
   if (units.indexOf(normStr(r.unidade)) === -1) return false;
   if (state.yearFilter.length  && state.yearFilter.indexOf(String(r.ano)) === -1) return false;
   if (state.monthFilter.length && state.monthFilter.indexOf(String(r.mes)) === -1) return false;
+  if (state.apelidoFilter.length && state.apelidoFilter.indexOf(r.apelido) === -1) return false;
   return true;
 }
 
