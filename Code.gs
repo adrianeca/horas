@@ -40,7 +40,8 @@ const HORAS_COL = {
   HORAS_TURMAS: 7, HORAS_TURMAS_SABADO: 8, ATIV_EXTRAS: 9, SUBS: 10,
   FALTAS_DESCONTADAS: 11, FALTAS_ABONADAS: 12, TOP_SPECIAL: 13,
   SUBS_OUTRAS_UNIDADE: 14, FALTAS_DESCONTADAS_DIAS: 15, FALTAS_ABONADAS_DIAS: 16,
-  EDITADO_EM: 22, EDITADO_POR: 23
+  EDITADO_EM: 22, EDITADO_POR: 23,
+  COMENTARIO: 24, COMENTADO_EM: 25, COMENTADO_POR: 26
 };
 const HORAS_ABA = 'HORAS';
 
@@ -742,11 +743,16 @@ function getFuncionarios(token) {
 function getHorasSheet_() {
   const sheet = SpreadsheetApp.openById(HORAS_SHEET_ID).getSheetByName(HORAS_ABA);
   if (!sheet) throw new Error('Aba "' + HORAS_ABA + '" não encontrada na planilha.');
-  // Garante o cabeçalho das colunas de edição (W/X), sem tocar nas colunas de fórmula R-V
+  // Garante o cabeçalho das colunas de edição (W/X) e de comentário (Y/Z/AA), sem tocar em R-V
   const editCol1 = HORAS_COL.EDITADO_EM + 1; // 1-based
   const header = sheet.getRange(1, editCol1, 1, 2).getValues()[0];
   if (!header[0]) {
     sheet.getRange(1, editCol1, 1, 2).setValues([['Editado Em', 'Editado Por']]);
+  }
+  const comCol1 = HORAS_COL.COMENTARIO + 1; // 1-based (Y)
+  const comHeader = sheet.getRange(1, comCol1, 1, 3).getValues()[0];
+  if (!comHeader[0]) {
+    sheet.getRange(1, comCol1, 1, 3).setValues([['Comentário', 'Comentado Em', 'Comentado Por']]);
   }
   return sheet;
 }
@@ -786,7 +792,9 @@ function getHorasData(token) {
       subsOutrasUnidade: r[HORAS_COL.SUBS_OUTRAS_UNIDADE] || 0,
       faltasDescontadasDias: r[HORAS_COL.FALTAS_DESCONTADAS_DIAS] || 0,
       faltasAbonadasDias: r[HORAS_COL.FALTAS_ABONADAS_DIAS] || 0,
-      editadoEm: fmtDataHora_(r[HORAS_COL.EDITADO_EM]), editadoPor: String(r[HORAS_COL.EDITADO_POR] || '').trim()
+      editadoEm: fmtDataHora_(r[HORAS_COL.EDITADO_EM]), editadoPor: String(r[HORAS_COL.EDITADO_POR] || '').trim(),
+      comentario: String(r[HORAS_COL.COMENTARIO] || '').trim(),
+      comentadoEm: fmtDataHora_(r[HORAS_COL.COMENTADO_EM]), comentadoPor: String(r[HORAS_COL.COMENTADO_POR] || '').trim()
     });
   }
 
@@ -868,6 +876,43 @@ function saveHorasData(payload) {
   });
 
   return { success: true };
+}
+
+// =============================================================================
+// COMENTÁRIOS — uma anotação por lançamento (unidade+mês+ano+matrícula), visível
+// tanto pro diretor quanto pro DP (ambos usam a mesma tabela de Professores).
+// Não é um campo de horas: pode ser preenchido mesmo com o período bloqueado.
+// =============================================================================
+
+function salvarComentarioHoras(payload) {
+  const user = getSessionUser_(payload.token);
+  if (!user) throw new Error('Sessão inválida ou expirada. Acesse novamente pelo Hub.');
+
+  const unidade = canonUnidade_(payload.unidade);
+  if (!isUserAllowedUnit_(user, unidade)) throw new Error('Você não tem permissão para esta unidade.');
+
+  const mat       = String(payload.matricula || '').trim();
+  const mes       = Number(payload.mes), ano = Number(payload.ano);
+  const comentario = String(payload.comentario || '').trim();
+  const key = norm_(unidade) + '|' + mes + '|' + ano + '|' + mat;
+
+  const sheet   = getHorasSheet_();
+  const allRows = sheet.getDataRange().getValues();
+
+  let rowIdx = 0;
+  for (let i = 1; i < allRows.length; i++) {
+    const r = allRows[i];
+    const k = norm_(canonUnidade_(r[HORAS_COL.UNIDADE])) + '|' + parseMes_(r[HORAS_COL.MES]) + '|' +
+      Number(r[HORAS_COL.ANO]) + '|' + String(r[HORAS_COL.MATRICULA]).trim();
+    if (k === key) { rowIdx = i + 1; break; }
+  }
+  if (!rowIdx) throw new Error('Lançamento não encontrado — salve os dados antes de comentar.');
+
+  const agora = comentario ? new Date() : '';
+  const autor = comentario ? (user.email || '') : '';
+  sheet.getRange(rowIdx, HORAS_COL.COMENTARIO + 1, 1, 3).setValues([[comentario, agora, autor]]);
+
+  return { success: true, comentario: comentario, comentadoEm: fmtDataHora_(agora), comentadoPor: autor };
 }
 
 // Exclui um lançamento (unidade+mes+ano+matricula). Só permite excluir do período vigente (Previsto).

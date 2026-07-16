@@ -31,11 +31,21 @@ Colunas A-V já existiam antes do webapp; o app só lê/escreve A-Q e nunca toca
 | H-Q | Horas Turmas, Horas Turmas Sábado, Ativ. Extras, Subs., Faltas Descontadas, Faltas Abonadas, Top Special, Subs. em Outras Unidade, Faltas Descontadas (dias), Faltas Abonadas (dias) | app — 10 campos numéricos digitados livremente pelo diretor, sem cálculo nem dependência entre eles |
 | R-V | Chave Matrícula, Apelido Ajustado, Nível Ajustado, Chave Matrícula Unidade, Data | **fórmula da própria planilha (ex. ARRAYFORMULA) — o app NUNCA escreve aqui** |
 | W-X | Editado Em, Editado Por | app (sinalização de edição, mesmo padrão do VR/VT) |
+| Y-AA | Comentário, Comentado Em, Comentado Por | app (anotação livre por lançamento, ver seção "Comentários" abaixo) |
 
 Constantes `COL` (índices na planilha de funcionários) e `HORAS_COL` (índices na aba HORAS) documentam exatamente essas posições no topo do `Code.gs`.
 
 - "Subs. em Outras Unidade" é só mais um campo numérico na linha do professor, na unidade dele — não gera lançamento nem visibilidade na unidade "receptora".
 - "Substitui" (funcao PROFESSOR) é o único critério de quem aparece no app — vem de `getFuncionarios()`, filtrando `COL.FUNCAO === 'PROFESSOR'` e ativo.
+
+## Comentários por lançamento
+
+Cada linha da tabela de Professores tem um ícone de comentário (💬) que abre um modal para anotar uma observação livre sobre aquele professor/mês — não é um campo de horas, então funciona mesmo com o período bloqueado, e não entra no CSV/Planilha Google exportados.
+
+- Um comentário por lançamento (não é thread/multi-mensagem); salvar um novo texto sobrescreve o anterior. Apagar o texto e salvar limpa o comentário e o rastro de autor/data.
+- Visível tanto para o diretor quanto para o DP — ambos usam a mesma tabela (`tabProfessores`), então quem tiver acesso ao webapp e à unidade vê o mesmo comentário.
+- Só é possível comentar um lançamento já salvo na planilha (`salvarComentarioHoras` busca a linha por unidade+mês+ano+matrícula); linhas recém-adicionadas via "+ Adicionar"/"Copiar mês anterior" mostram o ícone desabilitado até serem salvas.
+- Gravado nas colunas Y (Comentário), Z (Comentado Em) e AA (Comentado Por) — `getHorasSheet_()` cria esse cabeçalho automaticamente na primeira execução após o deploy, igual já faz com W/X (Editado Em/Por).
 
 ## Período e bloqueio — diferente do VR/VT
 
@@ -78,3 +88,4 @@ Gatilhos mensais (dias 1, 5, 9 e 11), instalados manualmente uma vez rodando `in
 - `MOTIVOS_LIBERACAO` ainda é lista provisória.
 - Confirmar se `DP_EMAIL` é o destinatário certo das solicitações.
 - Registrar `webhoras` no Hub (acessos + card) antes de liberar pros diretores.
+- Conferir que as colunas Y/Z/AA da aba "HORAS" estão livres na planilha real antes de publicar a versão com comentários — `getHorasSheet_()` escreve o cabeçalho ali na primeira execução e sobrescreveria qualquer coisa manual que já exista nessas colunas.
