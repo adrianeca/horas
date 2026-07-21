@@ -19,6 +19,22 @@ const MOTIVOS_LIBERACAO = [
   'Outro'
 ];
 
+// E-mails que nunca sofrem o bloqueio automático do dia 12 (edição sempre liberada
+// pra eles, sem precisar de liberação temporária nem solicitação ao DP).
+const EMAILS_SEM_BLOQUEIO = [
+  'dp.ec@brasas.com',
+  'adriane@brasas.com',
+  'priscila.soares@brasas.com',
+  'bianca_dp@brasas.com',
+  'bruno@brasas.com'
+];
+
+function isSemBloqueio_(email) {
+  if (!email) return false;
+  const emailNorm = norm_(email);
+  return EMAILS_SEM_BLOQUEIO.some(function(e) { return norm_(e) === emailNorm; });
+}
+
 // Índices das colunas na planilha de funcionários (base 0), aba "RJ - UNIDADES"
 const COL = {
   NOME:         2,   // C
@@ -227,10 +243,11 @@ function getCurrentPeriod(token) {
   // Aberto até o dia 11 do próprio mês; a partir do dia 12 bloqueia automaticamente
   let locked = now.getDate() > 11;
 
-  // Liberação temporária (válida até 23:59 do dia da concessão) ignora o bloqueio para esse usuário
+  // Liberação temporária (válida até 23:59 do dia da concessão) ignora o bloqueio para esse usuário,
+  // assim como os e-mails da lista EMAILS_SEM_BLOQUEIO (nunca bloqueiam)
   if (locked) {
     const user = getSessionUser_(token);
-    if (user && hasActiveLiberacao_(user.email)) locked = false;
+    if (user && (isSemBloqueio_(user.email) || hasActiveLiberacao_(user.email))) locked = false;
   }
 
   return {
