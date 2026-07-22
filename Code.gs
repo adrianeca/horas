@@ -57,9 +57,17 @@ const HORAS_COL = {
   FALTAS_DESCONTADAS: 11, FALTAS_ABONADAS: 12, TOP_SPECIAL: 13,
   SUBS_OUTRAS_UNIDADE: 14, FALTAS_DESCONTADAS_DIAS: 15, FALTAS_ABONADAS_DIAS: 16,
   EDITADO_EM: 22, EDITADO_POR: 23,
-  COMENTARIO: 24, COMENTADO_EM: 25, COMENTADO_POR: 26
+  COMENTARIO: 24, COMENTADO_EM: 25, COMENTADO_POR: 26,
+  CAMPOS_EDITADOS_LIBERACAO: 27  // AB — quais campos mudaram numa edição via liberação pós-dia-11
 };
 const HORAS_ABA = 'HORAS';
+
+// Nomes dos 10 campos numéricos, na mesma ordem de valuesFromEntry_() / colunas H-Q
+const CAMPOS_HORAS_ = [
+  'horasTurmas', 'horasTurmasSabado', 'ativExtras', 'subs',
+  'faltasDescontadas', 'faltasAbonadas', 'topSpecial', 'subsOutrasUnidade',
+  'faltasDescontadasDias', 'faltasAbonadasDias'
+];
 
 // Normaliza texto para comparação: minúsculo, sem acento, sem espaços nas bordas
 function norm_(s) {
@@ -771,6 +779,10 @@ function getHorasSheet_() {
   if (!comHeader[0]) {
     sheet.getRange(1, comCol1, 1, 3).setValues([['Comentário', 'Comentado Em', 'Comentado Por']]);
   }
+  const camposCol1 = HORAS_COL.CAMPOS_EDITADOS_LIBERACAO + 1; // 1-based (AB)
+  if (!sheet.getRange(1, camposCol1).getValue()) {
+    sheet.getRange(1, camposCol1).setValue('Campos Editados (Liberação)');
+  }
   return sheet;
 }
 
@@ -811,7 +823,8 @@ function getHorasData(token) {
       faltasAbonadasDias: r[HORAS_COL.FALTAS_ABONADAS_DIAS] || 0,
       editadoEm: fmtDataHora_(r[HORAS_COL.EDITADO_EM]), editadoPor: String(r[HORAS_COL.EDITADO_POR] || '').trim(),
       comentario: String(r[HORAS_COL.COMENTARIO] || '').trim(),
-      comentadoEm: fmtDataHora_(r[HORAS_COL.COMENTADO_EM]), comentadoPor: String(r[HORAS_COL.COMENTADO_POR] || '').trim()
+      comentadoEm: fmtDataHora_(r[HORAS_COL.COMENTADO_EM]), comentadoPor: String(r[HORAS_COL.COMENTADO_POR] || '').trim(),
+      camposEditadosLiberacao: String(r[HORAS_COL.CAMPOS_EDITADOS_LIBERACAO] || '').trim()
     });
   }
 
@@ -828,6 +841,12 @@ function getHorasData(token) {
 // (fórmulas da planilha: Chave Matrícula, Apelido Ajustado, Nível Ajustado,
 // Chave Matrícula Unidade, Data), que se autopreenchem ao detectar a linha nova.
 // =============================================================================
+
+// Valor "já lançado" mudou? Preencher campo vazio/zerado não conta como edição.
+function _valMudou_(antigo, novo) {
+  const a = Number(antigo) || 0;
+  return a !== 0 && Math.abs(a - (Number(novo) || 0)) > 0.005;
+}
 
 // Ordem espelha as colunas H-Q da aba HORAS
 function valuesFromEntry_(e) {
@@ -848,6 +867,9 @@ function saveHorasData(payload) {
   const user = getSessionUser_(payload.token);
   if (!user) throw new Error('Sessão inválida ou expirada. Acesse novamente pelo Hub.');
 
+  // Edição só foi possível porque o DP concedeu liberação após o dia 11 — marca os campos alterados
+  const forcedByLiberacao = new Date().getDate() > 11 && hasActiveLiberacao_(user.email);
+
   // Nunca confia na unidade vinda do cliente sem checar permissão; normaliza NS→CH, MRI→MR
   // antes de checar/gravar, pra planilha sempre guardar o código canônico.
   const entries = (payload.professores || [])
@@ -863,9 +885,10 @@ function saveHorasData(payload) {
     map[norm_(canonUnidade_(r[HORAS_COL.UNIDADE])) + '|' + parseMes_(r[HORAS_COL.MES]) + '|' + Number(r[HORAS_COL.ANO]) + '|' + String(r[HORAS_COL.MATRICULA]).trim()] = i + 1;
   }
 
-  const valCol1  = HORAS_COL.HORAS_TURMAS + 1; // 1-based, primeira coluna de valores (H)
-  const nVals    = 10;
-  const editCol1 = HORAS_COL.EDITADO_EM + 1;   // 1-based (W)
+  const valCol1    = HORAS_COL.HORAS_TURMAS + 1;              // 1-based (H)
+  const nVals      = 10;
+  const editCol1   = HORAS_COL.EDITADO_EM + 1;                // 1-based (W)
+  const camposCol1 = HORAS_COL.CAMPOS_EDITADOS_LIBERACAO + 1; // 1-based (AB)
 
   entries.forEach(function(e) {
     const mat    = String(e.matricula).trim();
@@ -876,12 +899,14 @@ function saveHorasData(payload) {
       const rowIdx = map[key];
       if (rowIdx <= allRows.length) {
         const oldVals = allRows[rowIdx - 1].slice(HORAS_COL.HORAS_TURMAS, HORAS_COL.HORAS_TURMAS + nVals);
-        const editou  = values.some(function(v, j) {
-          const antigo = Number(oldVals[j]) || 0;
-          return antigo !== 0 && antigo !== v;
-        });
+        const editou  = values.some(function(v, j) { return _valMudou_(oldVals[j], v); });
         if (editou) {
           sheet.getRange(rowIdx, editCol1, 1, 2).setValues([[new Date(), user.email || '']]);
+          // Edição dentro do prazo normal limpa a marcação de liberação; fora do prazo acumula os campos
+          const camposAlterados = forcedByLiberacao
+            ? CAMPOS_HORAS_.filter(function(campo, j) { return _valMudou_(oldVals[j], values[j]); }).join(',')
+            : '';
+          sheet.getRange(rowIdx, camposCol1).setValue(camposAlterados);
         }
       }
       sheet.getRange(rowIdx, valCol1, 1, nVals).setValues([values]);
