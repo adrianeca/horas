@@ -91,6 +91,21 @@ function parseMes_(v) {
   return parseInt(String(v).trim(), 10) || 0;
 }
 
+// Chave que identifica um lançamento (linha da aba HORAS): unidade + mês/ano + NOME
+// completo (coluna F). A matrícula NÃO entra na chave — decisão da Adriane (03/08/2026):
+// ela nem sempre está atualizada na planilha (linhas antigas com matrícula vazia ou
+// defasada), e usá-la fazia o salvamento colidir/gravar na linha errada. O nome vem do
+// cadastro de funcionários e é escrito pelo próprio app, então bate nos dois lados.
+function chaveHoras_(unidade, mes, ano, nome) {
+  return norm_(unidade) + '|' + Number(mes) + '|' + Number(ano) + '|' + norm_(nome);
+}
+
+// Chave da linha i (0-based) de getDataRange() da aba HORAS
+function chaveHorasRow_(r) {
+  return chaveHoras_(canonUnidade_(r[HORAS_COL.UNIDADE]), parseMes_(r[HORAS_COL.MES]),
+    Number(r[HORAS_COL.ANO]), r[HORAS_COL.NOME]);
+}
+
 // Padrão de escrita do mês na planilha: "06 Junho", "07 Julho"...
 const MESES_LABEL = ['01 Janeiro', '02 Fevereiro', '03 Março', '04 Abril', '05 Maio', '06 Junho',
                      '07 Julho', '08 Agosto', '09 Setembro', '10 Outubro', '11 Novembro', '12 Dezembro'];
@@ -875,49 +890,68 @@ function saveHorasData(payload) {
   const entries = (payload.professores || [])
     .map(function(e) { e.unidade = canonUnidade_(e.unidade); return e; })
     .filter(function(e) { return isUserAllowedUnit_(user, e.unidade); });
-  if (!entries.length) return { success: true };
+  if (!entries.length) return { success: true, saved: 0 };
 
-  const sheet   = getHorasSheet_();
-  const allRows = sheet.getDataRange().getValues();
-  const map = {};
-  for (let i = 1; i < allRows.length; i++) {
-    const r = allRows[i];
-    map[norm_(canonUnidade_(r[HORAS_COL.UNIDADE])) + '|' + parseMes_(r[HORAS_COL.MES]) + '|' + Number(r[HORAS_COL.ANO]) + '|' + String(r[HORAS_COL.MATRICULA]).trim()] = i + 1;
-  }
-
-  const valCol1    = HORAS_COL.HORAS_TURMAS + 1;              // 1-based (H)
-  const nVals      = 10;
-  const editCol1   = HORAS_COL.EDITADO_EM + 1;                // 1-based (W)
-  const camposCol1 = HORAS_COL.CAMPOS_EDITADOS_LIBERACAO + 1; // 1-based (AB)
-
-  entries.forEach(function(e) {
-    const mat    = String(e.matricula).trim();
-    const key    = norm_(e.unidade) + '|' + Number(e.mes) + '|' + Number(e.ano) + '|' + mat;
-    const values = valuesFromEntry_(e);
-
-    if (map[key]) {
-      const rowIdx = map[key];
-      if (rowIdx <= allRows.length) {
-        const oldVals = allRows[rowIdx - 1].slice(HORAS_COL.HORAS_TURMAS, HORAS_COL.HORAS_TURMAS + nVals);
-        const editou  = values.some(function(v, j) { return _valMudou_(oldVals[j], v); });
-        if (editou) {
-          sheet.getRange(rowIdx, editCol1, 1, 2).setValues([[new Date(), user.email || '']]);
-          // Edição dentro do prazo normal limpa a marcação de liberação; fora do prazo acumula os campos
-          const camposAlterados = forcedByLiberacao
-            ? CAMPOS_HORAS_.filter(function(campo, j) { return _valMudou_(oldVals[j], values[j]); }).join(',')
-            : '';
-          sheet.getRange(rowIdx, camposCol1).setValue(camposAlterados);
-        }
-      }
-      sheet.getRange(rowIdx, valCol1, 1, nVals).setValues([values]);
-    } else {
-      // Colunas A-G (identidade) + H-Q (valores) = 17 células; R em diante fica intocado
-      sheet.appendRow([e.unidade, mesLabel_(e.mes), e.ano, mat, e.apelido || '', e.nome, e.nivel || ''].concat(values));
-      map[key] = sheet.getLastRow();
+  // Trava de script: dois salvamentos simultâneos leriam o mesmo estado da planilha
+  // e duplicariam linhas no appendRow
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sheet   = getHorasSheet_();
+    const allRows = sheet.getDataRange().getValues();
+    const map = {}, duplicada = {};
+    for (let i = 1; i < allRows.length; i++) {
+      const k = chaveHorasRow_(allRows[i]);
+      if (map[k]) duplicada[k] = true;
+      map[k] = i + 1;
     }
-  });
 
-  return { success: true };
+    const valCol1    = HORAS_COL.HORAS_TURMAS + 1;              // 1-based (H)
+    const nVals      = 10;
+    const editCol1   = HORAS_COL.EDITADO_EM + 1;                // 1-based (W)
+    const camposCol1 = HORAS_COL.CAMPOS_EDITADOS_LIBERACAO + 1; // 1-based (AB)
+
+    const ambiguos = [];
+    entries.forEach(function(e) {
+      const mat    = String(e.matricula).trim();
+      const key    = chaveHoras_(e.unidade, e.mes, e.ano, e.nome);
+      const values = valuesFromEntry_(e);
+
+      // Mais de uma linha na planilha com essa mesma chave: gravar iria parar
+      // numa linha imprevisível — pula e avisa em vez de corromper
+      if (duplicada[key]) { ambiguos.push(e.nome + ' (' + e.unidade + ')'); return; }
+
+      if (map[key]) {
+        const rowIdx = map[key];
+        if (rowIdx <= allRows.length) {
+          const oldVals = allRows[rowIdx - 1].slice(HORAS_COL.HORAS_TURMAS, HORAS_COL.HORAS_TURMAS + nVals);
+          const editou  = values.some(function(v, j) { return _valMudou_(oldVals[j], v); });
+          if (editou) {
+            sheet.getRange(rowIdx, editCol1, 1, 2).setValues([[new Date(), user.email || '']]);
+            // Edição dentro do prazo normal limpa a marcação de liberação; fora do prazo acumula os campos
+            const camposAlterados = forcedByLiberacao
+              ? CAMPOS_HORAS_.filter(function(campo, j) { return _valMudou_(oldVals[j], values[j]); }).join(',')
+              : '';
+            sheet.getRange(rowIdx, camposCol1).setValue(camposAlterados);
+          }
+        }
+        sheet.getRange(rowIdx, valCol1, 1, nVals).setValues([values]);
+      } else {
+        // Colunas A-G (identidade) + H-Q (valores) = 17 células; R em diante fica intocado
+        sheet.appendRow([e.unidade, mesLabel_(e.mes), e.ano, mat, e.apelido || '', e.nome, e.nivel || ''].concat(values));
+        map[key] = sheet.getLastRow();
+      }
+    });
+
+    if (ambiguos.length) {
+      throw new Error('Salvamento parcial: a aba HORAS tem mais de uma linha para ' + ambiguos.join(', ') +
+        ' no mesmo mês (mesmo nome repetido na unidade). As horas desses professores NÃO foram salvas — os demais foram. Peça ao DP para corrigir a planilha.');
+    }
+
+    return { success: true, saved: entries.length };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // =============================================================================
@@ -933,22 +967,18 @@ function salvarComentarioHoras(payload) {
   const unidade = canonUnidade_(payload.unidade);
   if (!isUserAllowedUnit_(user, unidade)) throw new Error('Você não tem permissão para esta unidade.');
 
-  const mat       = String(payload.matricula || '').trim();
-  const mes       = Number(payload.mes), ano = Number(payload.ano);
   const comentario = String(payload.comentario || '').trim();
-  const key = norm_(unidade) + '|' + mes + '|' + ano + '|' + mat;
+  const key = chaveHoras_(unidade, payload.mes, payload.ano, payload.nome);
 
   const sheet   = getHorasSheet_();
   const allRows = sheet.getDataRange().getValues();
 
-  let rowIdx = 0;
+  let rowIdx = 0, matches = 0;
   for (let i = 1; i < allRows.length; i++) {
-    const r = allRows[i];
-    const k = norm_(canonUnidade_(r[HORAS_COL.UNIDADE])) + '|' + parseMes_(r[HORAS_COL.MES]) + '|' +
-      Number(r[HORAS_COL.ANO]) + '|' + String(r[HORAS_COL.MATRICULA]).trim();
-    if (k === key) { rowIdx = i + 1; break; }
+    if (chaveHorasRow_(allRows[i]) === key) { rowIdx = i + 1; matches++; }
   }
   if (!rowIdx) throw new Error('Lançamento não encontrado — salve os dados antes de comentar.');
+  if (matches > 1) throw new Error('Há mais de uma linha na aba HORAS para este professor neste mês. Peça ao DP para corrigir a planilha antes de comentar.');
 
   const agora = comentario ? new Date() : '';
   const autor = comentario ? (user.email || '') : '';
@@ -971,18 +1001,17 @@ function deleteHorasEntry(payload) {
   }
 
   const sheet = getHorasSheet_();
-  const key   = norm_(payload.unidade) + '|' + Number(payload.mes) + '|' + Number(payload.ano) + '|' + String(payload.matricula).trim();
+  const key   = chaveHoras_(payload.unidade, payload.mes, payload.ano, payload.nome);
   const rows  = sheet.getDataRange().getValues();
-  for (let i = 1; i < rows.length; i++) {
-    const r = rows[i];
-    const k = norm_(canonUnidade_(r[HORAS_COL.UNIDADE])) + '|' + parseMes_(r[HORAS_COL.MES]) + '|' + Number(r[HORAS_COL.ANO]) + '|' + String(r[HORAS_COL.MATRICULA]).trim();
-    if (k === key) {
-      sheet.deleteRow(i + 1);
-      return { success: true };
-    }
-  }
 
-  // Linha não encontrada na planilha (provavelmente nunca foi salva) — nada a fazer
+  let rowIdx = 0, matches = 0;
+  for (let i = 1; i < rows.length; i++) {
+    if (chaveHorasRow_(rows[i]) === key) { rowIdx = i + 1; matches++; }
+  }
+  if (matches > 1) throw new Error('Há mais de uma linha na aba HORAS para este professor neste mês. Peça ao DP para corrigir a planilha antes de excluir.');
+  if (rowIdx) sheet.deleteRow(rowIdx);
+
+  // Linha não encontrada = provavelmente nunca foi salva — nada a fazer
   return { success: true };
 }
 

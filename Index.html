@@ -935,37 +935,45 @@ function updateApelidoFilterLabel() {
     n === 0 ? 'Todos os apelidos' : (n === 1 ? state.apelidoFilter[0] : n + ' apelidos selecionados');
 }
 
+// Antes de mudar o filtro, copia o que está digitado na tabela de volta pro state
+// (o redesenho reconstruiria os inputs e apagaria valores ainda não salvos)
 function onUnitFilterCheck() {
+  syncDomToState();
   state.unitFilter = multiselectValues('unitFilterPanel');
   updateUnitFilterLabel();
   refreshFilteredViews();
 }
 
 function onRespFilterCheck() {
+  syncDomToState();
   state.respFilter = multiselectValues('respFilterPanel');
   updateRespFilterLabel();
   refreshFilteredViews();
 }
 
 function onYearFilterCheck() {
+  syncDomToState();
   state.yearFilter = multiselectValues('yearFilterPanel');
   updateYearFilterLabel();
   refreshFilteredViews();
 }
 
 function onMonthFilterCheck() {
+  syncDomToState();
   state.monthFilter = multiselectValues('monthFilterPanel');
   updateMonthFilterLabel();
   refreshFilteredViews();
 }
 
 function onApelidoFilterCheck() {
+  syncDomToState();
   state.apelidoFilter = multiselectValues('apelidoFilterPanel');
   updateApelidoFilterLabel();
   refreshFilteredViews();
 }
 
 function clearFilters() {
+  syncDomToState();
   state.unitFilter    = [];
   state.respFilter    = [];
   state.yearFilter    = [];
@@ -1018,6 +1026,7 @@ function downloadCsv(filename, lines) {
 }
 
 function buildExportData() {
+  syncDomToState(); // exporta o que está na tela, incluindo valores ainda não salvos
   var rows = state.profRows.filter(passesFilter);
   var header = ['Unidade', 'Mês', 'Ano', 'Matrícula', 'Apelido', 'Professor', 'Nível',
     'Horas Turmas', 'Horas Turmas Sáb.', 'Ativ. Extras', 'Subs.', 'Faltas Desc.', 'Faltas Abon.',
@@ -1166,22 +1175,23 @@ function copyableEntries() {
 
   var existing = {};
   rows.forEach(function(r) {
-    if (isSamePeriod(r, target)) existing[normStr(r.unidade) + '|' + r.matricula] = true;
+    // Casamento por NOME (não matrícula): a matrícula nem sempre está atualizada na aba HORAS
+    if (isSamePeriod(r, target)) existing[normStr(r.unidade) + '|' + normStr(r.nome)] = true;
   });
 
   var funcMap = {};
   state.funcs.professores.forEach(function(e) {
-    funcMap[normStr(e.unidade) + '|' + e.matricula] = e;
+    funcMap[normStr(e.unidade) + '|' + normStr(e.nome)] = e;
   });
 
   return rows.filter(function(r) {
     if (r.mes !== prev.mes || r.ano !== prev.ano) return false;
     if (units.indexOf(normStr(r.unidade)) === -1) return false;
-    var key = normStr(r.unidade) + '|' + r.matricula;
+    var key = normStr(r.unidade) + '|' + normStr(r.nome);
     if (existing[key]) return false;
     return !!funcMap[key];
   }).map(function(r) {
-    return { prevRow: r, emp: funcMap[normStr(r.unidade) + '|' + r.matricula] };
+    return { prevRow: r, emp: funcMap[normStr(r.unidade) + '|' + normStr(r.nome)] };
   });
 }
 
@@ -1203,6 +1213,8 @@ function copyFromPreviousMonth() {
   var msg = 'Copiar ' + entries.length + ' lançamento(s) do mês anterior para ' +
     MESES[target.mes - 1] + ' / ' + target.ano + '? Você poderá editar os valores antes de salvar.';
   if (!window.confirm(msg)) return;
+
+  syncDomToState(); // o redesenho abaixo não pode apagar valores digitados e não salvos
 
   entries.forEach(function(item) {
     var r = item.prevRow, emp = item.emp;
@@ -1247,13 +1259,14 @@ function populateAddEmpDropdown() {
   var unidade = normStr(unitSel.value);
   var target  = state.period.previsto;
 
+  // Casamento por NOME (não matrícula): a matrícula nem sempre está atualizada na aba HORAS
   var already = {};
   state.profRows.forEach(function(r) {
-    if (isSamePeriod(r, target) && normStr(r.unidade) === unidade) already[r.matricula] = true;
+    if (isSamePeriod(r, target) && normStr(r.unidade) === unidade) already[normStr(r.nome)] = true;
   });
 
   var allEmps = state.funcs.professores.filter(function(e) { return normStr(e.unidade) === unidade; });
-  var emps    = allEmps.filter(function(e) { return !already[e.matricula]; });
+  var emps    = allEmps.filter(function(e) { return !already[normStr(e.nome)]; });
 
   if (!allEmps.length) {
     empSel.innerHTML = '<option value="">— Nenhum professor cadastrado nesta unidade —</option>';
@@ -1279,6 +1292,8 @@ function addRow() {
 
   var emp = state.funcs.professores.filter(function(e) { return e.matricula === mat && normStr(e.unidade) === normStr(unidade); })[0];
   if (!emp) return;
+
+  syncDomToState(); // o redesenho abaixo não pode apagar valores digitados e não salvos
 
   var target = state.period.previsto;
   var novo = {
@@ -1348,7 +1363,7 @@ function deleteRow(idx) {
     })
     .deleteHorasEntry({
       token: TOKEN,
-      unidade: r.unidade, mes: r.mes, ano: r.ano, matricula: r.matricula
+      unidade: r.unidade, mes: r.mes, ano: r.ano, matricula: r.matricula, nome: r.nome
     });
 }
 
@@ -1393,6 +1408,7 @@ function salvarComentario() {
       r.comentadoEm  = res.comentadoEm;
       r.comentadoPor = res.comentadoPor;
       fecharModal('comentarioModal');
+      syncDomToState(); // o redesenho não pode apagar horas digitadas e não salvas
       renderProfTable();
       setStatus('Comentário salvo!', 'success');
     })
@@ -1403,7 +1419,7 @@ function salvarComentario() {
     })
     .salvarComentarioHoras({
       token: TOKEN,
-      unidade: r.unidade, mes: r.mes, ano: r.ano, matricula: r.matricula,
+      unidade: r.unidade, mes: r.mes, ano: r.ano, matricula: r.matricula, nome: r.nome,
       comentario: texto
     });
 }
@@ -1684,8 +1700,12 @@ function saveData() {
   var entries = collectEntries(state.profRows.filter(passesFilter), document.querySelectorAll('#profTableBody tr'));
 
   google.script.run
-    .withSuccessHandler(function() {
-      setStatus('Dados salvos com sucesso!', 'success');
+    .withSuccessHandler(function(res) {
+      if (res && res.saved === 0) {
+        setStatus('Nada foi salvo: nenhum lançamento do período aberto está visível nos filtros atuais.', 'error');
+      } else {
+        setStatus('Dados salvos com sucesso!' + (res && res.saved ? ' (' + res.saved + ' lançamento(s))' : ''), 'success');
+      }
       document.getElementById('saveBtn').disabled = false;
       reloadData();
     })

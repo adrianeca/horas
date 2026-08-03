@@ -44,8 +44,14 @@ Cada linha da tabela de Professores tem um ícone de comentário (💬) que abre
 
 - Um comentário por lançamento (não é thread/multi-mensagem); salvar um novo texto sobrescreve o anterior. Apagar o texto e salvar limpa o comentário e o rastro de autor/data.
 - Visível tanto para o diretor quanto para o DP — ambos usam a mesma tabela (`tabProfessores`), então quem tiver acesso ao webapp e à unidade vê o mesmo comentário.
-- Só é possível comentar um lançamento já salvo na planilha (`salvarComentarioHoras` busca a linha por unidade+mês+ano+matrícula); linhas recém-adicionadas via "+ Adicionar"/"Copiar mês anterior" mostram o ícone desabilitado até serem salvas.
+- Só é possível comentar um lançamento já salvo na planilha (`salvarComentarioHoras` busca a linha pela chave de lançamento — ver "Chave de lançamento" abaixo); linhas recém-adicionadas via "+ Adicionar"/"Copiar mês anterior" mostram o ícone desabilitado até serem salvas.
 - Gravado nas colunas Y (Comentário), Z (Comentado Em) e AA (Comentado Por) — `getHorasSheet_()` cria esse cabeçalho automaticamente na primeira execução após o deploy, igual já faz com W/X (Editado Em/Por).
+
+## Chave de lançamento (salvar/comentar/excluir)
+
+`saveHorasData`, `salvarComentarioHoras` e `deleteHorasEntry` localizam a linha na aba HORAS pela chave `chaveHoras_()`: **unidade + mês + ano + NOME completo (coluna F)**. A **matrícula NÃO entra na chave** — decisão da Adriane (03/08/2026): ela nem sempre está atualizada na aba HORAS (linhas antigas com matrícula vazia — ex. BG jan/fev 2026 — ou defasada em relação ao cadastro), e usá-la fazia lançamentos colidirem na mesma chave e um salvamento sobrescrever a linha do outro (era a causa de "dados desaparecendo" ao salvar). Se houver mais de uma linha com a mesma chave (mesmo nome repetido na unidade/mês), o app **recusa a operação daquele professor com erro explícito** em vez de gravar numa linha imprevisível. `saveHorasData` também usa `LockService` pra dois salvamentos simultâneos não duplicarem linhas no `appendRow`.
+
+No front-end, o casamento lançamento↔cadastro ("Copiar mês anterior", "+ Adicionar") também é por unidade+nome, e `syncDomToState()` é chamada antes de **todo** redesenho da tabela (filtros, "+ Adicionar", "Copiar mês anterior", salvar comentário, exportações) — sem isso, valores digitados e ainda não salvos eram apagados da tela ao redesenhar.
 
 ## Período e bloqueio — diferente do VR/VT
 
@@ -85,6 +91,7 @@ Gatilhos mensais (dias 1, 5, 9 e 11), instalados manualmente uma vez rodando `in
 
 ## Pendências conhecidas
 
+- Linhas antigas da aba HORAS com MATRÍCULA (col. D) vazia ou defasada — confirmado em BG jan/fev 2026, pode haver em outras unidades. O app não depende mais dela (chave é o nome), mas o ideal é o DP corrigir na planilha.
 - `MOTIVOS_LIBERACAO` ainda é lista provisória.
 - Confirmar se `DP_EMAIL` é o destinatário certo das solicitações.
 - Registrar `webhoras` no Hub (acessos + card) antes de liberar pros diretores.
