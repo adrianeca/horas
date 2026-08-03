@@ -53,6 +53,8 @@ Cada linha da tabela de Professores tem um ícone de comentário (💬) que abre
 
 No front-end, o casamento lançamento↔cadastro ("Copiar mês anterior", "+ Adicionar") também é por unidade+nome, e `syncDomToState()` é chamada antes de **todo** redesenho da tabela (filtros, "+ Adicionar", "Copiar mês anterior", salvar comentário, exportações) — sem isso, valores digitados e ainda não salvos eram apagados da tela ao redesenhar.
 
+**Linha nova é gravada com `setValues`, nunca `appendRow`**: o `appendRow` interpreta os valores como digitação do usuário e convertia o texto do mês ("08 Agosto") em DATA real — a linha então "sumia" do app, porque `parseInt(data)` dava NaN e o `getHorasData` a descartava. `parseMes_()` também aceita `Date` (retorna `getMonth()+1`), então linhas antigas que já viraram data continuam legíveis sem mexer na planilha.
+
 ## Período e bloqueio — diferente do VR/VT
 
 **O professor lança o mês CORRENTE, não o seguinte.** Ex.: horas de julho são lançadas em julho mesmo (diferente do VT/VR, que lançam adiantado o mês seguinte). O campo de resposta ainda se chama `previsto` só por reaproveitar o mesmo formato usado no restante do app — `getCurrentPeriod()`/`getPeriodoPrevistoAtual_()` retornam o mês/ano **atuais**, não mês+1.
@@ -92,6 +94,7 @@ Gatilhos mensais (dias 1, 5, 9 e 11), instalados manualmente uma vez rodando `in
 ## Pendências conhecidas
 
 - Linhas antigas da aba HORAS com MATRÍCULA (col. D) vazia ou defasada — confirmado em BG jan/fev 2026, pode haver em outras unidades. O app não depende mais dela (chave é o nome), mas o ideal é o DP corrigir na planilha.
+- A aba HORAS tem ~2.000 linhas vazias "sujas" no meio (aprox. linhas 2250–4250 em ago/2026) — o `getLastRow()` as conta, então lançamentos novos são gravados depois delas, lá embaixo. Funciona, mas vale o DP excluir essas linhas vazias pra planilha ficar organizada.
 - `MOTIVOS_LIBERACAO` ainda é lista provisória.
 - Confirmar se `DP_EMAIL` é o destinatário certo das solicitações.
 - Registrar `webhoras` no Hub (acessos + card) antes de liberar pros diretores.

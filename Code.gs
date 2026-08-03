@@ -87,7 +87,10 @@ function canonUnidade_(u) {
 }
 
 // Extrai o número do mês mesmo quando a célula guarda texto como "06 Junho" (em vez de 6)
+// ou uma DATA de verdade — o appendRow interpretava "08 Agosto" como digitação e convertia
+// a célula em data; essas linhas então "sumiam" do app porque parseInt(data) dava NaN.
 function parseMes_(v) {
+  if (v instanceof Date) return v.getMonth() + 1;
   return parseInt(String(v).trim(), 10) || 0;
 }
 
@@ -937,9 +940,13 @@ function saveHorasData(payload) {
         }
         sheet.getRange(rowIdx, valCol1, 1, nVals).setValues([values]);
       } else {
-        // Colunas A-G (identidade) + H-Q (valores) = 17 células; R em diante fica intocado
-        sheet.appendRow([e.unidade, mesLabel_(e.mes), e.ano, mat, e.apelido || '', e.nome, e.nivel || ''].concat(values));
-        map[key] = sheet.getLastRow();
+        // Colunas A-G (identidade) + H-Q (valores) = 17 células; R em diante fica intocado.
+        // setValues em vez de appendRow: o appendRow interpreta os valores como digitação
+        // e convertia o texto "08 Agosto" em DATA — a linha então sumia do app na releitura.
+        const newRow = sheet.getLastRow() + 1;
+        sheet.getRange(newRow, 1, 1, 17)
+          .setValues([[e.unidade, mesLabel_(e.mes), e.ano, mat, e.apelido || '', e.nome, e.nivel || ''].concat(values)]);
+        map[key] = newRow;
       }
     });
 
