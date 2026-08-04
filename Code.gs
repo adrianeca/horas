@@ -216,15 +216,22 @@ function isUserAllowedUnit_(user, unit) {
 
 // Todas as unidades que o usuário pode ver: as dele (se restrito) ou todas que existem
 // (com professor ativo cadastrado OU já com lançamento na planilha de Horas).
-function getAllowedUnidades_(user) {
+// Leituras únicas das planilhas, para o getInitData não reler a mesma aba várias vezes
+function readFuncRows_() {
+  const sheet = SpreadsheetApp.openById(FUNC_SHEET_ID).getSheetByName('RJ - UNIDADES');
+  if (!sheet) throw new Error('Aba "RJ - UNIDADES" não encontrada na planilha de funcionários.');
+  return sheet.getDataRange().getValues();
+}
+
+// funcRows/horasRows são opcionais: quando o chamador já leu as planilhas
+// (getInitData), reaproveita; senão lê aqui mesmo.
+function getAllowedUnidades_(user, funcRows, horasRows) {
   const set = {};
 
   if (user.units && user.units.length > 0) {
     user.units.forEach(function(u) { set[u] = true; });
   } else {
-    const funcSheet = SpreadsheetApp.openById(FUNC_SHEET_ID).getSheetByName('RJ - UNIDADES');
-    if (!funcSheet) throw new Error('Aba "RJ - UNIDADES" não encontrada.');
-    const funcRows = funcSheet.getDataRange().getValues();
+    funcRows = funcRows || readFuncRows_();
     for (let i = 1; i < funcRows.length; i++) {
       const nome = String(funcRows[i][COL.NOME] || '').trim();
       if (!nome) continue;
@@ -234,8 +241,7 @@ function getAllowedUnidades_(user) {
       if (u) set[u] = true;
     }
 
-    const sheet = getHorasSheet_();
-    const rows  = sheet.getDataRange().getValues();
+    const rows = horasRows || getHorasSheet_().getDataRange().getValues();
     for (let i = 1; i < rows.length; i++) {
       const u = canonUnidade_(rows[i][HORAS_COL.UNIDADE]);
       if (u) set[u] = true;
@@ -255,6 +261,32 @@ function getUnidades(token) {
 }
 
 // =============================================================================
+// INICIALIZAÇÃO EM UMA CHAMADA — o front-end fazia 5 google.script.run em
+// sequência (usuário → unidades → período → funcionários → lançamentos), cada um
+// com sua viagem de rede e relendo sessão/planilhas do zero. Aqui valida a sessão
+// UMA vez, lê cada planilha UMA vez e devolve tudo junto (abertura ~4x mais rápida).
+// Os endpoints individuais continuam existindo (reloadData usa getHorasData).
+// =============================================================================
+
+function getInitData(token) {
+  const user = getUserFromHub(token);
+
+  const funcRows  = readFuncRows_();
+  const horasRows = getHorasSheet_().getDataRange().getValues();
+
+  const unidades    = getAllowedUnidades_(user, funcRows, horasRows);
+  const allowedNorm = unidades.map(norm_);
+
+  return {
+    user:     user,
+    unidades: unidades,
+    period:   getCurrentPeriodForUser_(user),
+    funcs:    funcionariosFromRows_(allowedNorm, funcRows),
+    horas:    horasFromRows_(allowedNorm, horasRows)
+  };
+}
+
+// =============================================================================
 // PERÍODO VIGENTE — diferente do VR/VT: aqui o professor lança o PRÓPRIO mês
 // corrente (ex.: horas de julho são lançadas em julho), não o mês seguinte.
 // O campo ainda se chama "previsto" só para reaproveitar o mesmo formato de
@@ -262,6 +294,13 @@ function getUnidades(token) {
 // =============================================================================
 
 function getCurrentPeriod(token) {
+  // Só busca a sessão quando o bloqueio importa (a partir do dia 12)
+  const user = new Date().getDate() > 11 ? getSessionUser_(token) : null;
+  return getCurrentPeriodForUser_(user);
+}
+
+// Versão que reaproveita um user já autenticado (getInitData) em vez de reler a sessão
+function getCurrentPeriodForUser_(user) {
   const now = new Date();
   const previstoMes = now.getMonth() + 1;
   const previstoAno = now.getFullYear();
@@ -271,10 +310,7 @@ function getCurrentPeriod(token) {
 
   // Liberação temporária (válida até 23:59 do dia da concessão) ignora o bloqueio para esse usuário,
   // assim como os e-mails da lista EMAILS_SEM_BLOQUEIO (nunca bloqueiam)
-  if (locked) {
-    const user = getSessionUser_(token);
-    if (user && (isSemBloqueio_(user.email) || hasActiveLiberacao_(user.email))) locked = false;
-  }
+  if (locked && user && (isSemBloqueio_(user.email) || hasActiveLiberacao_(user.email))) locked = false;
 
   return {
     previsto: { mes: previstoMes, ano: previstoAno },
@@ -742,13 +778,11 @@ function enviarEmailRespostaSolicitacao_(solic, aprovada, obsDP, expira) {
 function getFuncionarios(token) {
   const user = getSessionUser_(token);
   if (!user) throw new Error('Sessão inválida.');
-  const allowedNorm = getAllowedUnidades_(user).map(norm_);
+  const rows = readFuncRows_();
+  return funcionariosFromRows_(getAllowedUnidades_(user, rows).map(norm_), rows);
+}
 
-  const ss    = SpreadsheetApp.openById(FUNC_SHEET_ID);
-  const sheet = ss.getSheetByName('RJ - UNIDADES');
-  if (!sheet) throw new Error('Aba "RJ - UNIDADES" não encontrada na planilha de funcionários.');
-  const rows  = sheet.getDataRange().getValues();
-
+function funcionariosFromRows_(allowedNorm, rows) {
   const professores = [];
 
   for (let i = 1; i < rows.length; i++) {
@@ -811,11 +845,11 @@ function getHorasSheet_() {
 function getHorasData(token) {
   const user = getSessionUser_(token);
   if (!user) throw new Error('Sessão inválida.');
-  const allowedNorm = getAllowedUnidades_(user).map(norm_);
+  const rows = getHorasSheet_().getDataRange().getValues();
+  return horasFromRows_(getAllowedUnidades_(user, null, rows).map(norm_), rows);
+}
 
-  const sheet = getHorasSheet_();
-  const rows  = sheet.getDataRange().getValues();
-
+function horasFromRows_(allowedNorm, rows) {
   const out = [];
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];

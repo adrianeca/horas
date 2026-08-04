@@ -53,6 +53,10 @@ Cada linha da tabela de Professores tem um ícone de comentário (💬) que abre
 
 No front-end, o casamento lançamento↔cadastro ("Copiar mês anterior", "+ Adicionar") também é por unidade+nome, e `syncDomToState()` é chamada antes de **todo** redesenho da tabela (filtros, "+ Adicionar", "Copiar mês anterior", salvar comentário, exportações) — sem isso, valores digitados e ainda não salvos eram apagados da tela ao redesenhar.
 
+## Abertura em uma chamada — getInitData (08/2026)
+
+O front-end abria com 5 `google.script.run` em sequência (usuário → unidades → período → funcionários → lançamentos), cada um revalidando a sessão e relendo as mesmas planilhas (~10–15s). `getInitData(token)` devolve tudo numa chamada só: valida a sessão uma vez, lê a planilha de funcionários e a aba HORAS uma vez cada e monta as cinco respostas com os cores `funcionariosFromRows_`/`horasFromRows_`/`getCurrentPeriodForUser_` (que os endpoints individuais também usam — `getHorasData` continua existindo pro `reloadData` pós-salvamento). Mesmo padrão replicado no VT e VR.
+
 ## Autosave e filtros (08/2026)
 
 - **Autosave**: cada campo editável dispara `onCellEdited` (debounce de 2s) e `onCellCommitted` (no `change`, ou seja, ao sair do campo/Enter — envia na hora). O envio (`flushAutosave`) manda **só as linhas sujas** (`_dirty`) pro `saveHorasData` e **não redesenha a tabela** durante a digitação (`refreshTableIfIdle` só redesenha com o foco fora dela). Um envio por vez (`autosaveInFlight`); edição durante o envio re-marca a linha e gera novo envio; falha devolve o `_dirty` (nada se perde da tela) e orienta a usar o botão. O botão "Salvar dados" continua como fallback (`manualSavePending`/`manualSaveInFlight` coordenam os dois). `beforeunload` avisa se ainda há edição não enviada.
