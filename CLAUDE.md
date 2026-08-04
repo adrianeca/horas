@@ -53,6 +53,14 @@ Cada linha da tabela de Professores tem um ícone de comentário (💬) que abre
 
 No front-end, o casamento lançamento↔cadastro ("Copiar mês anterior", "+ Adicionar") também é por unidade+nome, e `syncDomToState()` é chamada antes de **todo** redesenho da tabela (filtros, "+ Adicionar", "Copiar mês anterior", salvar comentário, exportações) — sem isso, valores digitados e ainda não salvos eram apagados da tela ao redesenhar.
 
+## Autosave e filtros (08/2026)
+
+- **Autosave**: cada campo editável dispara `onCellEdited` (debounce de 2s) e `onCellCommitted` (no `change`, ou seja, ao sair do campo/Enter — envia na hora). O envio (`flushAutosave`) manda **só as linhas sujas** (`_dirty`) pro `saveHorasData` e **não redesenha a tabela** durante a digitação (`refreshTableIfIdle` só redesenha com o foco fora dela). Um envio por vez (`autosaveInFlight`); edição durante o envio re-marca a linha e gera novo envio; falha devolve o `_dirty` (nada se perde da tela) e orienta a usar o botão. O botão "Salvar dados" continua como fallback (`manualSavePending`/`manualSaveInFlight` coordenam os dois). `beforeunload` avisa se ainda há edição não enviada.
+- **Linhas novas furam os filtros**: `passesFilter` deixa passar `_new`/`_keepVisible` — com filtro de mês/apelido ativo, a linha do "+ Adicionar"/"Copiar mês anterior" sumia da tela na hora e (pior) ficava fora do salvamento, que era **a causa do "bugava quando filtrado"** relatado por diretora (03/08/2026). `_keepVisible` sobrevive ao salvar+recarregar (reaplicado por chave em `onHorasLoaded`) e é limpo quando o usuário mexe em qualquer filtro (`clearKeepVisible`).
+- **Salvar manual envia o período aberto INTEIRO** (`state.profRows.filter(isOpenPeriod)`), não só as linhas visíveis no filtro — linha escondida por filtro com edição pendente também é salva.
+- **Opções de filtro atualizam ao adicionar/copiar**: `renderFilterBar()` roda de novo após "+ Adicionar"/"Copiar mês anterior" — antes, o apelido/ano do professor recém-adicionado só entrava nas listas de filtro depois de recarregar a página ("não aparece nos filtros", relatado 03/08/2026).
+- Esse padrão (autosave + linhas novas furando filtro + salvar tudo) deve ser replicado no VR e VT.
+
 **Linha nova é gravada com `setValues`, nunca `appendRow`**: o `appendRow` interpreta os valores como digitação do usuário e convertia o texto do mês ("08 Agosto") em DATA real — a linha então "sumia" do app, porque `parseInt(data)` dava NaN e o `getHorasData` a descartava. `parseMes_()` também aceita `Date` (retorna `getMonth()+1`), então linhas antigas que já viraram data continuam legíveis sem mexer na planilha.
 
 ## Período e bloqueio — diferente do VR/VT
