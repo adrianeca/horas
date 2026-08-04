@@ -1327,7 +1327,8 @@ function addRow() {
   var novo = {
     unidade: unidade, mes: target.mes, ano: target.ano,
     matricula: emp.matricula, apelido: emp.apelido || '', nome: emp.nome, nivel: emp.nivel || '',
-    _new: true, _keepVisible: true
+    _new: true, _keepVisible: true,
+    _dirty: true // adicionar já grava o professor na planilha, mesmo com as horas zeradas
   };
   CAMPOS.forEach(function(c) { novo[c.key] = 0; });
   state.profRows.push(novo);
@@ -1336,7 +1337,8 @@ function addRow() {
 
   renderProfTable();
   renderFilterBar(); // o apelido/ano do professor novo precisa entrar nas opções de filtro
-  setStatus(emp.nome + ' adicionado(a) em ' + MESES[target.mes - 1] + ' / ' + target.ano + ' — preencha as horas.', 'success');
+  setStatus(emp.nome + ' adicionado(a) em ' + MESES[target.mes - 1] + ' / ' + target.ano + ' — salvando...', 'saving');
+  flushAutosave();
 }
 
 // ── EXCLUIR LANÇAMENTO (só do período aberto) ──────────────────
