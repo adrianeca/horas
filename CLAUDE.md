@@ -53,6 +53,15 @@ Cada linha da tabela de Professores tem um ícone de comentário (💬) que abre
 
 No front-end, o casamento lançamento↔cadastro ("Copiar mês anterior", "+ Adicionar") também é por unidade+nome, e `syncDomToState()` é chamada antes de **todo** redesenho da tabela (filtros, "+ Adicionar", "Copiar mês anterior", salvar comentário, exportações) — sem isso, valores digitados e ainda não salvos eram apagados da tela ao redesenhar.
 
+## Nível do professor vira data (08/2026)
+
+Níveis válidos: **A, B, 1.1–1.4, 2.1–2.4, 3.1–3.4**. Numa célula sem formato de texto o Sheets lê "1.2" como **1/fev** e "3.3" como **3/mar** — o nível vira Date e o app exibia "Tue Mar 03 2026 00:00:00 GMT-0300..." no lugar do nível (relatado pela Adriane em 03/08/2026, unidade CG/agosto).
+
+- `nivelFromCell_()` normaliza os dois formatos em que o estrago chega: `Date` de verdade (célula da planilha) **e** o texto que o JS gera pra essa data — que é como o valor acabou persistido na coluna G da aba HORAS, já que `getFuncionarios` fazia `String(dataDoCadastro)`. Aplicado na leitura do cadastro (col. AH), na leitura da aba HORAS e no payload de `saveHorasData` (aba aberta antes do deploy pode mandar o nível corrompido de volta).
+- Reconstrução dia-primeiro vs mês-primeiro: escolhe a leitura que existe em `NIVEIS_VALIDOS_` (1/abr só pode ser "1.4", não existe "4.1"); no empate (ex.: 1/fev → "1.2" ou "2.1", ambos válidos) decide o `getSpreadsheetLocale()` da planilha de funcionários — pt_BR = dia primeiro.
+- Escrita sempre com `setNivelCell_()` (`setNumberFormat('@')` antes do `setValue`), senão o Sheets reconverteria na gravação. Salvar uma linha existente **conserta** a coluna G quando o valor cru difere do nível do cadastro — a planilha se limpa sozinha conforme os meses são salvos.
+- **A raiz costuma estar no cadastro** (`FUNC_SHEET_ID`, col. AH): formatar a coluna como texto protege o que for digitado depois, mas não desfaz as células já convertidas — essas precisam ser redigitadas. O app fica correto de qualquer forma.
+
 ## Abertura em uma chamada — getInitData (08/2026)
 
 O front-end abria com 5 `google.script.run` em sequência (usuário → unidades → período → funcionários → lançamentos), cada um revalidando a sessão e relendo as mesmas planilhas (~10–15s). `getInitData(token)` devolve tudo numa chamada só: valida a sessão uma vez, lê a planilha de funcionários e a aba HORAS uma vez cada e monta as cinco respostas com os cores `funcionariosFromRows_`/`horasFromRows_`/`getCurrentPeriodForUser_` (que os endpoints individuais também usam — `getHorasData` continua existindo pro `reloadData` pós-salvamento). Mesmo padrão replicado no VT e VR.

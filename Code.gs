@@ -94,6 +94,66 @@ function parseMes_(v) {
   return parseInt(String(v).trim(), 10) || 0;
 }
 
+// =============================================================================
+// NÍVEL DO PROFESSOR — "1.2", "3.3" etc. viram DATA quando digitados numa célula
+// sem formato de texto (em pt-BR o Sheets lê "1.2" como 1/fev). O nível corrompido
+// chega aqui de duas formas: como Date de verdade (célula da planilha) ou como o
+// texto que o JS gera para essa data ("Tue Mar 03 2026 00:00:00 GMT-0300 (...)"),
+// que é como o valor acabou gravado na coluna G da aba HORAS. Reconstrói o nível
+// nos dois casos; formatar a coluna como texto só protege o que for digitado depois.
+// =============================================================================
+
+const NIVEIS_VALIDOS_ = ['A', 'B',
+  '1.1', '1.2', '1.3', '1.4',
+  '2.1', '2.2', '2.3', '2.4',
+  '3.1', '3.2', '3.3', '3.4'];
+
+// Locale da planilha de funcionários — só é consultado quando aparece um nível
+// corrompido em data, e no máximo uma vez por execução.
+let _localeFuncCache_ = null;
+
+function localeDiaPrimeiro_() {
+  if (_localeFuncCache_ === null) {
+    try {
+      _localeFuncCache_ = SpreadsheetApp.openById(FUNC_SHEET_ID).getSpreadsheetLocale() || 'pt_BR';
+    } catch (e) {
+      _localeFuncCache_ = 'pt_BR';
+    }
+  }
+  // pt_BR (e a maioria) lê "1.2" como dia 1/mês 2; en_US lê como mês 1/dia 2
+  return String(_localeFuncCache_).toLowerCase().indexOf('en_us') !== 0;
+}
+
+function nivelFromCell_(v) {
+  if (v === null || v === undefined) return '';
+
+  let data = null;
+  if (v instanceof Date) {
+    data = v;
+  } else {
+    const s = String(v).trim();
+    if (!s) return '';
+    // Só tenta reinterpretar o texto que o próprio JS gera para um Date
+    if (/^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4}/.test(s)) {
+      const parsed = new Date(s);
+      if (!isNaN(parsed.getTime())) data = parsed;
+    }
+    if (!data) return s;
+  }
+
+  const diaPrimeiro = data.getDate() + '.' + (data.getMonth() + 1);
+  const mesPrimeiro = (data.getMonth() + 1) + '.' + data.getDate();
+  const okDia = NIVEIS_VALIDOS_.indexOf(diaPrimeiro) !== -1;
+  const okMes = NIVEIS_VALIDOS_.indexOf(mesPrimeiro) !== -1;
+
+  // Só uma das leituras é um nível existente na maioria dos casos (ex.: 1/abr só
+  // pode ser "1.4", já que não existe nível "4.1"); no empate decide o locale.
+  if (okDia && okMes) return localeDiaPrimeiro_() ? diaPrimeiro : mesPrimeiro;
+  if (okDia) return diaPrimeiro;
+  if (okMes) return mesPrimeiro;
+  return String(v).trim(); // não bate com nenhum nível conhecido: devolve como veio
+}
+
 // Chave que identifica um lançamento (linha da aba HORAS): unidade + mês/ano + NOME
 // completo (coluna F). A matrícula NÃO entra na chave — decisão da Adriane (03/08/2026):
 // ela nem sempre está atualizada na planilha (linhas antigas com matrícula vazia ou
@@ -796,7 +856,7 @@ function funcionariosFromRows_(allowedNorm, rows) {
     if (!matricula) continue;
 
     const apelido = String(row[COL.APELIDO] || '').trim();
-    const nivel   = String(row[COL.NIVEL] || '').trim();
+    const nivel   = nivelFromCell_(row[COL.NIVEL]); // "1.2"/"3.3" podem ter virado data no cadastro
 
     // Unidade principal + secundária, sem repetir se forem iguais (já normalizadas: NS→CH, MRI→MR)
     const unidades = [canonUnidade_(row[COL.UNIDADE]), canonUnidade_(row[COL.UNIDADE_SEC])]
@@ -862,7 +922,7 @@ function horasFromRows_(allowedNorm, rows) {
       matricula: String(r[HORAS_COL.MATRICULA]).trim(),
       apelido: String(r[HORAS_COL.APELIDO]).trim(),
       nome: String(r[HORAS_COL.NOME]).trim(),
-      nivel: String(r[HORAS_COL.NIVEL]).trim(),
+      nivel: nivelFromCell_(r[HORAS_COL.NIVEL]),
       horasTurmas: r[HORAS_COL.HORAS_TURMAS] || 0,
       horasTurmasSabado: r[HORAS_COL.HORAS_TURMAS_SABADO] || 0,
       ativExtras: r[HORAS_COL.ATIV_EXTRAS] || 0,
@@ -893,6 +953,12 @@ function horasFromRows_(allowedNorm, rows) {
 // (fórmulas da planilha: Chave Matrícula, Apelido Ajustado, Nível Ajustado,
 // Chave Matrícula Unidade, Data), que se autopreenchem ao detectar a linha nova.
 // =============================================================================
+
+// Grava o nível sempre como TEXTO — sem forçar o formato, o Sheets reconverteria
+// "1.2" em data (é assim que o valor se corrompe em primeiro lugar).
+function setNivelCell_(sheet, rowIdx, nivel) {
+  sheet.getRange(rowIdx, HORAS_COL.NIVEL + 1).setNumberFormat('@').setValue(nivel);
+}
 
 // Valor "já lançado" mudou? Preencher campo vazio/zerado não conta como edição.
 function _valMudou_(antigo, novo) {
@@ -925,7 +991,11 @@ function saveHorasData(payload) {
   // Nunca confia na unidade vinda do cliente sem checar permissão; normaliza NS→CH, MRI→MR
   // antes de checar/gravar, pra planilha sempre guardar o código canônico.
   const entries = (payload.professores || [])
-    .map(function(e) { e.unidade = canonUnidade_(e.unidade); return e; })
+    .map(function(e) {
+      e.unidade = canonUnidade_(e.unidade);
+      e.nivel   = nivelFromCell_(e.nivel); // aba aberta antes do deploy pode mandar o nível em formato de data
+      return e;
+    })
     .filter(function(e) { return isUserAllowedUnit_(user, e.unidade); });
   if (!entries.length) return { success: true, saved: 0 };
 
@@ -961,6 +1031,13 @@ function saveHorasData(payload) {
       if (map[key]) {
         const rowIdx = map[key];
         if (rowIdx <= allRows.length) {
+          // A coluna G é sempre um espelho do cadastro (o diretor não digita nível):
+          // aproveita o salvamento pra consertar nível defasado ou corrompido em data.
+          // Compara o valor CRU: uma célula que virou data continua "certa" depois de
+          // normalizada, mas precisa ser reescrita como texto pra planilha ficar limpa.
+          if (e.nivel && String(allRows[rowIdx - 1][HORAS_COL.NIVEL]).trim() !== e.nivel) {
+            setNivelCell_(sheet, rowIdx, e.nivel);
+          }
           const oldVals = allRows[rowIdx - 1].slice(HORAS_COL.HORAS_TURMAS, HORAS_COL.HORAS_TURMAS + nVals);
           const editou  = values.some(function(v, j) { return _valMudou_(oldVals[j], v); });
           if (editou) {
@@ -978,6 +1055,9 @@ function saveHorasData(payload) {
         // setValues em vez de appendRow: o appendRow interpreta os valores como digitação
         // e convertia o texto "08 Agosto" em DATA — a linha então sumia do app na releitura.
         const newRow = sheet.getLastRow() + 1;
+        // Formato de texto ANTES de escrever: numa célula de formato automático o
+        // Sheets converteria o nível "1.2" em 1/fev, o mesmo que corrompeu o cadastro
+        sheet.getRange(newRow, HORAS_COL.NIVEL + 1).setNumberFormat('@');
         sheet.getRange(newRow, 1, 1, 17)
           .setValues([[e.unidade, mesLabel_(e.mes), e.ano, mat, e.apelido || '', e.nome, e.nivel || ''].concat(values)]);
         map[key] = newRow;
