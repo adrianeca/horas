@@ -1228,7 +1228,8 @@ function copyFromPreviousMonth() {
     var novo = {
       unidade: emp.unidade, mes: target.mes, ano: target.ano,
       matricula: emp.matricula, apelido: emp.apelido || '', nome: emp.nome, nivel: emp.nivel || '',
-      _new: true, _keepVisible: true
+      _new: true, _keepVisible: true,
+      _dirty: true // copiar já salva sozinho — sem depender de editar um campo ou clicar em "Salvar dados"
     };
     CAMPOS.forEach(function(c) { novo[c.key] = r[c.key] || 0; });
     state.profRows.push(novo);
@@ -1238,7 +1239,8 @@ function copyFromPreviousMonth() {
 
   renderProfTable();
   renderFilterBar(); // apelidos/anos das linhas copiadas entram nas opções de filtro
-  setStatus(entries.length + ' lançamento(s) copiado(s) do mês anterior. Revise — o salvamento automático guarda as alterações.', 'success');
+  setStatus(entries.length + ' lançamento(s) copiado(s) do mês anterior — salvando automaticamente...', 'saving');
+  flushAutosave();
 }
 
 // ── ADICIONAR PROFESSOR (só para o mês corrente, único período do controle) ──

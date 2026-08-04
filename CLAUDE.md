@@ -63,6 +63,7 @@ O front-end abria com 5 `google.script.run` em sequência (usuário → unidades
 - **Linhas novas furam os filtros**: `passesFilter` deixa passar `_new`/`_keepVisible` — com filtro de mês/apelido ativo, a linha do "+ Adicionar"/"Copiar mês anterior" sumia da tela na hora e (pior) ficava fora do salvamento, que era **a causa do "bugava quando filtrado"** relatado por diretora (03/08/2026). `_keepVisible` sobrevive ao salvar+recarregar (reaplicado por chave em `onHorasLoaded`) e é limpo quando o usuário mexe em qualquer filtro (`clearKeepVisible`).
 - **Salvar manual envia o período aberto INTEIRO** (`state.profRows.filter(isOpenPeriod)`), não só as linhas visíveis no filtro — linha escondida por filtro com edição pendente também é salva.
 - **Opções de filtro atualizam ao adicionar/copiar**: `renderFilterBar()` roda de novo após "+ Adicionar"/"Copiar mês anterior" — antes, o apelido/ano do professor recém-adicionado só entrava nas listas de filtro depois de recarregar a página ("não aparece nos filtros", relatado 03/08/2026).
+- **"Copiar mês anterior" já salva sozinho**: as linhas copiadas nascem `_dirty` e o `flushAutosave()` roda na sequência — pedido da Adriane (03/08/2026): copiar sem editar nada não salvava, pois o autosave só disparava em edição de campo. O "+ Adicionar" continua salvando só a partir da primeira digitação (linha zerada abandonada não vira lançamento).
 - Esse padrão (autosave + linhas novas furando filtro + salvar tudo) deve ser replicado no VR e VT.
 
 **Linha nova é gravada com `setValues`, nunca `appendRow`**: o `appendRow` interpreta os valores como digitação do usuário e convertia o texto do mês ("08 Agosto") em DATA real — a linha então "sumia" do app, porque `parseInt(data)` dava NaN e o `getHorasData` a descartava. `parseMes_()` também aceita `Date` (retorna `getMonth()+1`), então linhas antigas que já viraram data continuam legíveis sem mexer na planilha.
@@ -106,7 +107,6 @@ Gatilhos mensais (dias 1, 5, 9 e 11), instalados manualmente uma vez rodando `in
 ## Pendências conhecidas
 
 - Linhas antigas da aba HORAS com MATRÍCULA (col. D) vazia ou defasada — confirmado em BG jan/fev 2026, pode haver em outras unidades. O app não depende mais dela (chave é o nome), mas o ideal é o DP corrigir na planilha.
-- A aba HORAS tem ~2.000 linhas vazias "sujas" no meio (aprox. linhas 2250–4250 em ago/2026) — o `getLastRow()` as conta, então lançamentos novos são gravados depois delas, lá embaixo. Funciona, mas vale o DP excluir essas linhas vazias pra planilha ficar organizada.
 - `MOTIVOS_LIBERACAO` ainda é lista provisória.
 - Confirmar se `DP_EMAIL` é o destinatário certo das solicitações.
 - Registrar `webhoras` no Hub (acessos + card) antes de liberar pros diretores.
