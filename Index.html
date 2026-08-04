@@ -1289,23 +1289,41 @@ function populateAddEmpDropdown() {
     return;
   }
   empSel.disabled  = false;
+  // O value é a POSIÇÃO no cadastro, não a matrícula: professor recém-admitido costuma
+  // vir com matrícula placeholder ("-") e, com duas iguais na mesma unidade, escolher a
+  // segunda acabava adicionando a primeira de novo (a busca por matrícula pegava a 1ª).
   empSel.innerHTML = '<option value="">— Selecione o professor —</option>' +
-    emps.map(function(e) { return '<option value="' + esc(e.matricula) + '">' + esc(e.nome) + (e.apelido ? ' (' + esc(e.apelido) + ')' : '') + '</option>'; }).join('');
+    emps.map(function(e) {
+      return '<option value="' + state.funcs.professores.indexOf(e) + '">' +
+        esc(e.nome) + (e.apelido ? ' (' + esc(e.apelido) + ')' : '') + '</option>';
+    }).join('');
 }
 
 function addRow() {
   var unitSel = document.getElementById('profAddUnit');
   var empSel  = document.getElementById('profAddEmp');
   var unidade = unitSel.value;
-  var mat     = empSel.value;
-  if (!unidade || !mat) return;
+  var escolha = empSel.value;
+  if (!unidade || escolha === '') return;
 
-  var emp = state.funcs.professores.filter(function(e) { return e.matricula === mat && normStr(e.unidade) === normStr(unidade); })[0];
-  if (!emp) return;
+  var emp = state.funcs.professores[Number(escolha)];
+  if (!emp || normStr(emp.unidade) !== normStr(unidade)) return;
+
+  var target = state.period.previsto;
+
+  // Rede de segurança: nunca duplica o mesmo professor no mês (o dropdown já
+  // esconde quem foi lançado, mas uma lista desatualizada não pode virar linha repetida)
+  var jaLancado = state.profRows.some(function(r) {
+    return isSamePeriod(r, target) && normStr(r.unidade) === normStr(unidade) && normStr(r.nome) === normStr(emp.nome);
+  });
+  if (jaLancado) {
+    populateAddEmpDropdown();
+    setStatus(emp.nome + ' já está lançado(a) em ' + MESES[target.mes - 1] + ' / ' + target.ano + '.', 'error');
+    return;
+  }
 
   syncDomToState(); // o redesenho abaixo não pode apagar valores digitados e não salvos
 
-  var target = state.period.previsto;
   var novo = {
     unidade: unidade, mes: target.mes, ano: target.ano,
     matricula: emp.matricula, apelido: emp.apelido || '', nome: emp.nome, nivel: emp.nivel || '',
