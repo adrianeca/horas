@@ -100,6 +100,61 @@ function parseRawUnidades_(raw) {
   return parts;
 }
 
+// =============================================================================
+// QUEM ENTRA NO CONTROLE DE HORAS
+// Regra geral: só FUNÇÃO = PROFESSOR (aba "RJ - UNIDADES", coluna F).
+// Exceções por unidade: pessoas de outra função que a direção decidiu incluir —
+// hoje só a GERENTE DE UNIDADE de BG (Eliana), pedido da Adriane em 06/08/2026.
+// Duas formas de casar, e basta UMA delas:
+//   por FUNÇÃO — pega quem estiver naquela função na unidade (uma futura gerente
+//     de BG entra sozinha), mas depende da grafia exata da coluna F;
+//   por NOME   — garante a pessoa mesmo se a função estiver escrita de outro jeito.
+// A exceção é sempre presa a uma UNIDADE: gerente de outra unidade continua fora.
+// Comparações via norm_ (ignora acento/caixa/espaço) e unidade via canonUnidade_.
+// =============================================================================
+const EXCECOES_FUNCAO_POR_UNIDADE_ = {
+  'BG': ['GERENTE DE UNIDADE', 'GERENTE']
+};
+
+const EXCECOES_NOME_POR_UNIDADE_ = {
+  'BG': ['ELIANA PINHO DA SILVA']
+};
+
+// Nome do cadastro costuma vir com espaço duplo/sobrando entre os sobrenomes —
+// além do norm_ (caixa/acento/bordas), colapsa os espaços internos.
+function normNome_(s) {
+  return norm_(s).replace(/\s+/g, ' ');
+}
+
+// Lista de exceções configurada para a unidade (ou null), tolerando diferença de
+// caixa/acento na chave do mapa.
+function excecoesDaUnidade_(mapa, unidade) {
+  const uNorm = norm_(canonUnidade_(unidade));
+  const chave = Object.keys(mapa).filter(function(k) { return norm_(k) === uNorm; })[0];
+  return chave ? mapa[chave] : null;
+}
+
+// row = linha crua da aba "RJ - UNIDADES"; unidade = unidade em que a pessoa está
+// sendo considerada NAQUELE momento — a exceção vale só nessa unidade, não arrasta
+// a pessoa para a unidade secundária dela.
+function elegivelHoras_(row, unidade) {
+  const funcao = norm_(row[COL.FUNCAO]);
+  if (funcao === 'professor') return true;
+
+  const porNome = excecoesDaUnidade_(EXCECOES_NOME_POR_UNIDADE_, unidade);
+  if (porNome) {
+    const nome = normNome_(row[COL.NOME]);
+    if (nome && porNome.some(function(n) { return normNome_(n) === nome; })) return true;
+  }
+
+  const porFuncao = excecoesDaUnidade_(EXCECOES_FUNCAO_POR_UNIDADE_, unidade);
+  if (porFuncao && funcao) {
+    if (porFuncao.some(function(f) { return norm_(f) === funcao; })) return true;
+  }
+
+  return false;
+}
+
 // Extrai o número do mês mesmo quando a célula guarda texto como "06 Junho" (em vez de 6)
 // ou uma DATA de verdade — o appendRow interpretava "08 Agosto" como digitação e convertia
 // a célula em data; essas linhas então "sumiam" do app porque parseInt(data) dava NaN.
@@ -309,8 +364,8 @@ function getAllowedUnidades_(user, funcRows, horasRows) {
       const nome = String(funcRows[i][COL.NOME] || '').trim();
       if (!nome) continue;
       if (isInativo_(funcRows[i][COL.ATIVO])) continue;
-      if (String(funcRows[i][COL.FUNCAO]).trim().toUpperCase() !== 'PROFESSOR') continue;
       const u = canonUnidade_(funcRows[i][COL.UNIDADE]);
+      if (!elegivelHoras_(funcRows[i], u)) continue;
       if (u) set[u] = true;
     }
 
@@ -842,7 +897,7 @@ function enviarEmailRespostaSolicitacao_(solic, aprovada, obsDP, expira) {
 }
 
 // =============================================================================
-// FUNCIONÁRIOS (só professores)
+// FUNCIONÁRIOS (professores + as exceções por unidade — ver elegivelHoras_)
 // =============================================================================
 
 // Retorna os professores de TODAS as unidades que o usuário pode ver.
@@ -863,7 +918,6 @@ function funcionariosFromRows_(allowedNorm, rows) {
     const nome = String(row[COL.NOME]).trim();
     if (!nome) continue;
     if (isInativo_(row[COL.ATIVO])) continue;
-    if (String(row[COL.FUNCAO]).trim().toUpperCase() !== 'PROFESSOR') continue;
 
     const matricula = String(row[COL.MATRICULA]).trim();
     if (!matricula) continue;
@@ -877,6 +931,9 @@ function funcionariosFromRows_(allowedNorm, rows) {
 
     unidades.forEach(function(u) {
       if (allowedNorm.indexOf(norm_(u)) === -1) return;
+      // A elegibilidade é avaliada POR UNIDADE: a exceção da gerente vale só na
+      // unidade em que ela está cadastrada como exceção (BG), não na secundária.
+      if (!elegivelHoras_(row, u)) return;
       professores.push({ nome: nome, matricula: matricula, apelido: apelido, nivel: nivel, unidade: u });
     });
   }
@@ -1219,8 +1276,8 @@ function getUnidadesAtivas_() {
     const nome = String(rows[i][COL.NOME] || '').trim();
     if (!nome) continue;
     if (isInativo_(rows[i][COL.ATIVO])) continue;
-    if (String(rows[i][COL.FUNCAO]).trim().toUpperCase() !== 'PROFESSOR') continue;
     const u = canonUnidade_(rows[i][COL.UNIDADE]);
+    if (!elegivelHoras_(rows[i], u)) continue;
     if (u) set[u] = true;
   }
   return Object.keys(set);
@@ -1448,5 +1505,79 @@ function diagnosticoHoras() {
     Logger.log('Linha %s → unidade="%s" mes=%s ano=%s mat="%s" vals=%s',
       i + 2, r[HORAS_COL.UNIDADE], r[HORAS_COL.MES], r[HORAS_COL.ANO], r[HORAS_COL.MATRICULA],
       JSON.stringify(r.slice(HORAS_COL.HORAS_TURMAS, HORAS_COL.HORAS_TURMAS + 10)));
+  });
+}
+
+// Confere as exceções (por nome e por função) contra o cadastro real: lista, para
+// cada unidade com exceção, TODAS as funções ativas encontradas ali e quem foi de
+// fato incluído — e por qual regra. Serve pra ver se o nome bate exatamente com o
+// cadastro e como a função está escrita na coluna F ("GERENTE DE UNIDADE",
+// "GERENTE", "GERENTE ADM"...). Não envia nada nem escreve na planilha.
+function diagnosticoExcecoesHoras() {
+  const rows = readFuncRows_();
+
+  const unidadesComExcecao = Object.keys(EXCECOES_FUNCAO_POR_UNIDADE_);
+  Object.keys(EXCECOES_NOME_POR_UNIDADE_).forEach(function(u) {
+    if (unidadesComExcecao.indexOf(u) === -1) unidadesComExcecao.push(u);
+  });
+
+  unidadesComExcecao.forEach(function(unidade) {
+    const porNome   = excecoesDaUnidade_(EXCECOES_NOME_POR_UNIDADE_, unidade) || [];
+    const porFuncao = excecoesDaUnidade_(EXCECOES_FUNCAO_POR_UNIDADE_, unidade) || [];
+    Logger.log('=== %s — exceções por nome: %s | por função: %s ===',
+      unidade, porNome.join(' | ') || '(nenhuma)', porFuncao.join(' | ') || '(nenhuma)');
+
+    const funcoes = {};
+    const nomesCasados = {};
+    let incluidos = 0;
+
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      const nome = String(row[COL.NOME] || '').trim();
+      if (!nome) continue;
+      if (isInativo_(row[COL.ATIVO])) continue;
+
+      const unidadesDaLinha = [canonUnidade_(row[COL.UNIDADE]), canonUnidade_(row[COL.UNIDADE_SEC])];
+      if (unidadesDaLinha.map(norm_).indexOf(norm_(unidade)) === -1) continue;
+
+      const funcao = String(row[COL.FUNCAO] || '').trim();
+      funcoes[funcao] = (funcoes[funcao] || 0) + 1;
+
+      if (norm_(funcao) === 'professor') continue;
+      if (!elegivelHoras_(row, unidade)) continue;
+
+      const casouNome   = porNome.some(function(n) { return normNome_(n) === normNome_(nome); });
+      const casouFuncao = porFuncao.some(function(f) { return norm_(f) === norm_(funcao); });
+      if (casouNome) nomesCasados[normNome_(nome)] = true;
+      incluidos++;
+
+      const regras = [];
+      if (casouNome)   regras.push('NOME');
+      if (casouFuncao) regras.push('FUNÇÃO');
+
+      const matricula = String(row[COL.MATRICULA] || '').trim();
+      Logger.log('  INCLUÍDO por %s → "%s" (função "%s", matrícula "%s", nível "%s")',
+        regras.join(' + '), nome, funcao, matricula, nivelFromCell_(row[COL.NIVEL]));
+
+      // funcionariosFromRows_ descarta quem está sem matrícula — vale o alerta
+      if (!matricula) {
+        Logger.log('    ATENÇÃO: matrícula vazia no cadastro — mesmo elegível, "%s" NÃO aparece no app. ' +
+          'O DP precisa preencher a coluna AB.', nome);
+      }
+    }
+
+    Logger.log('  Funções ativas encontradas em %s: %s', unidade,
+      Object.keys(funcoes).map(function(f) { return '"' + f + '" (' + funcoes[f] + ')'; }).join(', ') || '(nenhuma)');
+
+    porNome.forEach(function(n) {
+      if (!nomesCasados[normNome_(n)]) {
+        Logger.log('  ATENÇÃO: "%s" não foi encontrado(a) ATIVO(A) em %s — confira a grafia do nome ' +
+          'na coluna C do cadastro e se a unidade está certa.', n, unidade);
+      }
+    });
+    if (!incluidos) {
+      Logger.log('  ATENÇÃO: nenhuma pessoa entrou pela exceção em %s — confira acima as funções encontradas ' +
+        'e ajuste EXCECOES_FUNCAO_POR_UNIDADE_ / EXCECOES_NOME_POR_UNIDADE_.', unidade);
+    }
   });
 }

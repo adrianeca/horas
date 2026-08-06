@@ -36,7 +36,24 @@ Colunas A-V já existiam antes do webapp; o app só lê/escreve A-Q e nunca toca
 Constantes `COL` (índices na planilha de funcionários) e `HORAS_COL` (índices na aba HORAS) documentam exatamente essas posições no topo do `Code.gs`.
 
 - "Subs. em Outras Unidade" é só mais um campo numérico na linha do professor, na unidade dele — não gera lançamento nem visibilidade na unidade "receptora".
-- "Substitui" (funcao PROFESSOR) é o único critério de quem aparece no app — vem de `getFuncionarios()`, filtrando `COL.FUNCAO === 'PROFESSOR'` e ativo.
+- "Substitui" (funcao PROFESSOR) é o critério de quem aparece no app — vem de `getFuncionarios()`, filtrando `COL.FUNCAO === 'PROFESSOR'` e ativo, mais as exceções abaixo.
+
+## Exceções — quem entra além dos professores
+
+Pedido da Adriane (06/08/2026): a **GERENTE DE UNIDADE de BG, Eliana Pinho da Silva**, entra no controle de horas. Dois mapas no topo do `Code.gs`, ambos chaveados por unidade:
+
+```js
+const EXCECOES_FUNCAO_POR_UNIDADE_ = { 'BG': ['GERENTE DE UNIDADE', 'GERENTE'] };
+const EXCECOES_NOME_POR_UNIDADE_   = { 'BG': ['ELIANA PINHO DA SILVA'] };
+```
+
+- Ponto único de decisão: `elegivelHoras_(row, unidade)` — PROFESSOR, ou nome na lista, ou função na lista (basta uma). Usado nos três lugares que antes comparavam com `'PROFESSOR'`: `getAllowedUnidades_()`, `funcionariosFromRows_()` e `getUnidadesAtivas_()` (lembretes).
+- **Por nome E por função** de propósito: a grafia exata da função na coluna F do cadastro não foi conferida, então o nome garante a Eliana hoje; a regra por função faz uma futura gerente de BG entrar sozinha, sem mexer no código. Se o diagnóstico confirmar que a função casa, a linha por nome pode sair.
+- A exceção é presa à **unidade**: gerente de outra unidade continua fora, e a checagem roda **por unidade** dentro de `funcionariosFromRows_()` — não arrasta a pessoa para a unidade secundária dela.
+- Comparações via `norm_` (ignora acento/caixa/espaço) e unidade via `canonUnidade_`.
+- O nível dela vem preenchido na col. AH e é lido normalmente (`nivelFromCell_`) — a coluna G do lançamento não fica vazia.
+- `diagnosticoExcecoesHoras()` (editor do Apps Script) confere contra o cadastro real: lista as funções ativas de BG, quem entrou e por qual regra (NOME/FUNÇÃO), avisa se o nome não casou e se a matrícula está vazia (`funcionariosFromRows_` descarta quem está sem matrícula). Não envia e-mail nem escreve nada.
+- A aba e os rótulos do app continuam dizendo "Professores"; a gerente aparece nessa mesma lista.
 
 ## Comentários por lançamento
 
@@ -103,7 +120,7 @@ Gatilhos mensais (dias 1, 5, 9 e 11), instalados manualmente uma vez rodando `in
 - **Dia 1**: e-mail de abertura do período, pra todas as unidades com professor ativo, incondicional.
 - **Dias 5, 9 e 11**: lembrete só pra quem ainda não tem nenhum lançamento salvo no mês corrente (`getUnidadesPreenchidas_`). Dia 11 avisa que é o último dia antes do bloqueio.
 - Destinatário por unidade: lista fixa `DIRETORES_UNIDADE` (mesma lista do VR/VT — e-mail do diretor específico de cada unidade, passada manualmente pela Adriane). Unidades sem e-mail cadastrado ali são puladas.
-- `getUnidadesAtivas_()` filtra só unidades com **professor** ativo (`COL.FUNCAO === 'PROFESSOR'`) — diferente do VR/VT, que consideram qualquer funcionário ativo.
+- `getUnidadesAtivas_()` filtra só unidades com alguém elegível ativo (`elegivelHoras_` — professor, ou a exceção da unidade) — diferente do VR/VT, que consideram qualquer funcionário ativo.
 - Antes de instalar os gatilhos de verdade, rodar `diagnosticoLembretesHoras()` (ajustando a variável `dia` no topo da função) — só loga no console quem receberia o quê, **não envia e-mail nenhum**.
 - Template de e-mail: mesma identidade visual do resto do app (faixa colorida no topo — azul na abertura, âmbar/laranja/vermelho conforme a urgência sobe).
 
