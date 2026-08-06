@@ -52,8 +52,16 @@ const EXCECOES_NOME_POR_UNIDADE_   = { 'BG': ['ELIANA PINHO DA SILVA'] };
 - A exceção é presa à **unidade**: gerente de outra unidade continua fora, e a checagem roda **por unidade** dentro de `funcionariosFromRows_()` — não arrasta a pessoa para a unidade secundária dela.
 - Comparações via `norm_` (ignora acento/caixa/espaço) e unidade via `canonUnidade_`.
 - O nível dela vem preenchido na col. AH e é lido normalmente (`nivelFromCell_`) — a coluna G do lançamento não fica vazia.
-- `diagnosticoExcecoesHoras()` (editor do Apps Script) confere contra o cadastro real: lista as funções ativas de BG, quem entrou e por qual regra (NOME/FUNÇÃO), avisa se o nome não casou e se a matrícula está vazia (`funcionariosFromRows_` descarta quem está sem matrícula). Não envia e-mail nem escreve nada.
+- `diagnosticoExcecoesHoras()` (editor do Apps Script) confere contra o cadastro real: lista as funções ativas de BG, quem entrou e por qual regra (NOME/FUNÇÃO), avisa se o nome não casou. Não envia e-mail nem escreve nada.
 - A aba e os rótulos do app continuam dizendo "Professores"; a gerente aparece nessa mesma lista.
+
+## Matrícula não é critério de entrada (06/08/2026)
+
+A matrícula continua vindo da **coluna AB** do cadastro, mas **professor ativo aparece no app mesmo sem ela** — `funcionariosFromRows_` não descarta mais a linha sem matrícula (decisão da Adriane: recém-admitido fica semanas sem matrícula, e o campo pode ficar em branco no lançamento). Nada quebra com ela vazia: a chave de gravação é unidade+mês+ano+nome, e o front-end casa lançamento↔cadastro por unidade+nome e identifica o professor no "+ Adicionar" pela posição no cadastro. A coluna D da aba HORAS só fica em branco até o DP preencher o cadastro.
+
+## Diagnóstico "fulano não aparece no + Adicionar"
+
+`diagnosticoProfessorHoras('KIARA', 'RC')` no editor do Apps Script (só lê e loga). Refaz para uma pessoa cada descarte de `funcionariosFromRows_` e diz qual barrou: nome vazio, col K = Inativo, unidade (col V/AE) diferente da esperada, célula de unidade com **duas unidades juntas** ("EC NEW/RC" — `canonUnidade_` não separa por `/`, ao contrário de `parseRawUnidades_`, então o texto inteiro vira uma unidade que não casa com nada), ou função fora de PROFESSOR/exceções. Fecha listando os lançamentos que já existem na aba HORAS com aquele nome (o dropdown esconde quem já foi lançado no mês) e a lista completa que o app monta hoje para a unidade.
 
 ## Comentários por lançamento
 
@@ -66,7 +74,14 @@ Cada linha da tabela de Professores tem um ícone de comentário (💬) que abre
 
 ## Chave de lançamento (salvar/comentar/excluir)
 
-`saveHorasData`, `salvarComentarioHoras` e `deleteHorasEntry` localizam a linha na aba HORAS pela chave `chaveHoras_()`: **unidade + mês + ano + NOME completo (coluna F)**. A **matrícula NÃO entra na chave** — decisão da Adriane (03/08/2026): ela nem sempre está atualizada na aba HORAS (linhas antigas com matrícula vazia — ex. BG jan/fev 2026 — ou defasada em relação ao cadastro), e usá-la fazia lançamentos colidirem na mesma chave e um salvamento sobrescrever a linha do outro (era a causa de "dados desaparecendo" ao salvar). Se houver mais de uma linha com a mesma chave (mesmo nome repetido na unidade/mês), o app **recusa a operação daquele professor com erro explícito** em vez de gravar numa linha imprevisível. `saveHorasData` também usa `LockService` pra dois salvamentos simultâneos não duplicarem linhas no `appendRow`.
+`saveHorasData`, `salvarComentarioHoras` e `deleteHorasEntry` localizam a linha na aba HORAS pela chave `chaveHoras_()`: **unidade + mês + ano + NOME completo (coluna F)**. A **matrícula NÃO entra na chave** — decisão da Adriane (03/08/2026): ela nem sempre está atualizada na aba HORAS (linhas antigas com matrícula vazia — ex. BG jan/fev 2026 — ou defasada em relação ao cadastro), e usá-la fazia lançamentos colidirem na mesma chave e um salvamento sobrescrever a linha do outro (era a causa de "dados desaparecendo" ao salvar). Se houver mais de uma linha com a mesma chave (mesmo nome repetido na unidade/mês), **salvar e comentar são recusados com erro explícito** em vez de gravar numa linha imprevisível — mas **excluir apaga uma linha por clique** (ver abaixo), senão não haveria como o diretor limpar a duplicata.
+
+### Duplicação por falta de flush (06/08/2026)
+
+`saveHorasData` usa `LockService`, mas soltava a trava **sem `SpreadsheetApp.flush()`**: as escritas ficavam pendentes, o salvamento seguinte pegava a trava, lia a aba ainda sem a linha recém-criada e criava uma segunda linha para o mesmo professor. Com o autosave disparando de 2 em 2s isso duplicou lançamentos inteiros (relatado 06/08/2026, aparecendo no VR). O `flush()` agora roda dentro do `try`, antes do `releaseLock()`. **O mesmo bug e a mesma correção valem para VR e VT.**
+
+- `deleteHorasEntry` deixou de recusar quando há duplicata: apaga **uma** linha por chamada, escolhendo por `escolherLinhaParaExcluir_()` a última que estiver **zerada** (se todas tiverem valores, a última da aba) — assim nunca leva junto a linha com as horas preenchidas. Devolve `duplicadasRestantes` e o front-end avisa quantas ainda faltam.
+- `limparLancamentosDuplicados(mes, ano)` limpa um mês inteiro de uma vez no editor do Apps Script: sem o terceiro argumento só **simula** e loga; com `true` apaga. Mantém a primeira linha de cada professor e só apaga repetidas **idênticas** — se duas linhas da mesma pessoa tiverem valores diferentes, não apaga nenhuma e avisa quais conferir.
 
 No front-end, o casamento lançamento↔cadastro ("Copiar mês anterior", "+ Adicionar") também é por unidade+nome, e `syncDomToState()` é chamada antes de **todo** redesenho da tabela (filtros, "+ Adicionar", "Copiar mês anterior", salvar comentário, exportações) — sem isso, valores digitados e ainda não salvos eram apagados da tela ao redesenhar.
 
@@ -91,6 +106,7 @@ O front-end abria com 5 `google.script.run` em sequência (usuário → unidades
 - **Opções de filtro atualizam ao adicionar/copiar**: `renderFilterBar()` roda de novo após "+ Adicionar"/"Copiar mês anterior" — antes, o apelido/ano do professor recém-adicionado só entrava nas listas de filtro depois de recarregar a página ("não aparece nos filtros", relatado 03/08/2026).
 - **"+ Adicionar" identifica o professor pela POSIÇÃO no cadastro, nunca pela matrícula**: o `value` do dropdown é `state.funcs.professores.indexOf(e)`. Professor recém-admitido costuma vir com matrícula placeholder ("-") no cadastro; com duas iguais na mesma unidade, o `filter(matricula === mat)[0]` pegava sempre a primeira — escolher a segunda professora adicionava a primeira de novo (relatado 03/08/2026, unidade CG). `addRow()` ainda tem uma trava por unidade+nome que recusa lançar duas vezes o mesmo professor no mês.
 - **"Copiar mês anterior" e "+ Adicionar" já salvam sozinhos**: as linhas nascem `_dirty` e o `flushAutosave()` roda na sequência — pedido da Adriane (03/08/2026): antes o autosave só disparava em edição de campo, então copiar/adicionar sem digitar nada não gravava. Consequência aceita: professor adicionado e deixado zerado **vira lançamento na planilha** (e conta como unidade preenchida nos lembretes) — para desfazer, usar a lixeira da linha, que apaga na planilha.
+- **Barra de filtros fixa ao rolar**: as pills e o `.filter-card` ficam dentro de `.sticky-nav-bar` (`position:sticky; top:68px` = altura do `.app-header`, que é sticky no topo com `z-index:100`; a barra usa `z-index:90` e fundo `--gray-100` pra tabela não aparecer atrás). Padrão idêntico nos três webapps — o VR já tinha, Horas e VT ganharam em 06/08/2026.
 - Esse padrão (autosave + linhas novas furando filtro + salvar tudo) deve ser replicado no VR e VT.
 
 **Linha nova é gravada com `setValues`, nunca `appendRow`**: o `appendRow` interpreta os valores como digitação do usuário e convertia o texto do mês ("08 Agosto") em DATA real — a linha então "sumia" do app, porque `parseInt(data)` dava NaN e o `getHorasData` a descartava. `parseMes_()` também aceita `Date` (retorna `getMonth()+1`), então linhas antigas que já viraram data continuam legíveis sem mexer na planilha.

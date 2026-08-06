@@ -919,8 +919,10 @@ function funcionariosFromRows_(allowedNorm, rows) {
     if (!nome) continue;
     if (isInativo_(row[COL.ATIVO])) continue;
 
-    const matricula = String(row[COL.MATRICULA]).trim();
-    if (!matricula) continue;
+    // Matrícula NÃO é critério de entrada: professor ativo aparece mesmo sem ela
+    // (recém-admitido costuma ficar sem matrícula por semanas). Fica em branco no
+    // lançamento — a chave de gravação é unidade+mês+ano+nome, não usa matrícula.
+    const matricula = String(row[COL.MATRICULA] || '').trim();
 
     const apelido = String(row[COL.APELIDO] || '').trim();
     const nivel   = nivelFromCell_(row[COL.NIVEL]); // "1.2"/"3.3" podem ter virado data no cadastro
@@ -1090,7 +1092,7 @@ function saveHorasData(payload) {
 
     const ambiguos = [];
     entries.forEach(function(e) {
-      const mat    = String(e.matricula).trim();
+      const mat    = String(e.matricula || '').trim();  // pode ser vazia: professor sem matrícula no cadastro
       const key    = chaveHoras_(e.unidade, e.mes, e.ano, e.nome);
       const values = valuesFromEntry_(e);
 
@@ -1138,6 +1140,12 @@ function saveHorasData(payload) {
       throw new Error('Salvamento parcial: a aba HORAS tem mais de uma linha para ' + ambiguos.join(', ') +
         ' no mesmo mês (mesmo nome repetido na unidade). As horas desses professores NÃO foram salvas — os demais foram. Peça ao DP para corrigir a planilha.');
     }
+
+    // Confirma a gravação ANTES de soltar a trava. Sem isso as escritas ficam
+    // pendentes: o próximo salvamento pega a trava, lê a aba ainda sem as linhas
+    // recém-criadas e cria uma SEGUNDA linha para o mesmo professor — foi o que
+    // duplicou lançamentos inteiros com o autosave disparando de 2 em 2s.
+    SpreadsheetApp.flush();
 
     return { success: true, saved: entries.length };
   } finally {
@@ -1195,15 +1203,91 @@ function deleteHorasEntry(payload) {
   const key   = chaveHoras_(payload.unidade, payload.mes, payload.ano, payload.nome);
   const rows  = sheet.getDataRange().getValues();
 
-  let rowIdx = 0, matches = 0;
+  const achadas = [];
   for (let i = 1; i < rows.length; i++) {
-    if (chaveHorasRow_(rows[i]) === key) { rowIdx = i + 1; matches++; }
+    if (chaveHorasRow_(rows[i]) === key) achadas.push(i);
   }
-  if (matches > 1) throw new Error('Há mais de uma linha na aba HORAS para este professor neste mês. Peça ao DP para corrigir a planilha antes de excluir.');
-  if (rowIdx) sheet.deleteRow(rowIdx);
-
   // Linha não encontrada = provavelmente nunca foi salva — nada a fazer
-  return { success: true };
+  if (!achadas.length) return { success: true, deleted: false };
+
+  // Duplicata na aba (criada por salvamentos simultâneos, antes do flush): apaga
+  // UMA linha por vez, preferindo uma que esteja zerada, pra nunca levar junto a
+  // linha que tem as horas preenchidas. Antes a exclusão era recusada com erro e
+  // o diretor ficava sem como tirar a duplicata da tela.
+  const alvo = escolherLinhaParaExcluir_(rows, achadas, HORAS_COL.HORAS_TURMAS, 10);
+
+  sheet.deleteRow(alvo + 1);
+  SpreadsheetApp.flush();
+  return { success: true, deleted: true, duplicadasRestantes: achadas.length - 1 };
+}
+
+// Entre as linhas com a mesma chave, escolhe qual apagar: a última que estiver
+// sem nenhum valor preenchido; se todas tiverem valores, a última da planilha.
+// rows = matriz crua; achadas = índices (base 0) das linhas com a mesma chave;
+// ini/n = primeira coluna de valores e quantas são.
+function escolherLinhaParaExcluir_(rows, achadas, ini, n) {
+  for (let j = achadas.length - 1; j >= 0; j--) {
+    const vals = rows[achadas[j]].slice(ini, ini + n);
+    const zerada = vals.every(function(v) { return !v || Number(v) === 0; });
+    if (zerada) return achadas[j];
+  }
+  return achadas[achadas.length - 1];
+}
+
+// =============================================================================
+// LIMPEZA DAS DUPLICATAS já gravadas antes da correção do SpreadsheetApp.flush()
+// Rodar no editor do Apps Script:
+//   limparLancamentosDuplicados(8, 2026)        → só LISTA o que faria (nada muda)
+//   limparLancamentosDuplicados(8, 2026, true)  → apaga de verdade
+// Mantém a PRIMEIRA linha de cada professor e apaga as repetidas. Se as repetidas
+// tiverem valores diferentes entre si, não apaga nenhuma daquela pessoa e avisa —
+// aí alguém precisa olhar qual está certa antes.
+// =============================================================================
+function limparLancamentosDuplicados(mes, ano, executar) {
+  if (!mes || !ano) {
+    Logger.log('Informe mês e ano: limparLancamentosDuplicados(8, 2026) lista; ' +
+      'limparLancamentosDuplicados(8, 2026, true) apaga.');
+    return;
+  }
+  Logger.log(executar ? '=== APAGANDO duplicatas de %s/%s ===' : '=== SIMULAÇÃO (nada será apagado) — %s/%s ===', mes, ano);
+
+  const sheet  = getHorasSheet_();
+  const rows   = sheet.getDataRange().getValues();
+  const grupos = {};
+  for (let i = 1; i < rows.length; i++) {
+    if (parseMes_(rows[i][HORAS_COL.MES]) !== Number(mes) || Number(rows[i][HORAS_COL.ANO]) !== Number(ano)) continue;
+    const k = chaveHorasRow_(rows[i]);
+    (grupos[k] = grupos[k] || []).push(i);
+  }
+
+  const ini = HORAS_COL.HORAS_TURMAS, nVals = 10;
+  const apagar = [];
+  Object.keys(grupos).forEach(function(k) {
+    const idxs = grupos[k];
+    if (idxs.length < 2) return;
+
+    const assinatura = function(i) { return rows[i].slice(ini, ini + nVals).map(function(v) { return String(v == null ? '' : v); }).join('|'); };
+    const base = assinatura(idxs[0]);
+    const iguais = idxs.every(function(i) { return assinatura(i) === base; });
+
+    const nome = String(rows[idxs[0]][HORAS_COL.NOME]).trim();
+    const unidade = String(rows[idxs[0]][HORAS_COL.UNIDADE]).trim();
+    if (!iguais) {
+      Logger.log('  %s (%s): %s linhas com VALORES DIFERENTES — nenhuma apagada, confira nas linhas %s',
+        nome, unidade, idxs.length, idxs.map(function(i) { return i + 1; }).join(', '));
+      return;
+    }
+    idxs.slice(1).forEach(function(i) { apagar.push(i); });
+    Logger.log('  %s (%s): %s linhas idênticas — mantém a linha %s, apaga %s',
+      nome, unidade, idxs.length, idxs[0] + 1, idxs.slice(1).map(function(i) { return i + 1; }).join(', '));
+  });
+
+  if (executar && apagar.length) {
+    // De baixo pra cima: apagar de cima desloca os índices das linhas seguintes
+    apagar.sort(function(a, b) { return b - a; }).forEach(function(i) { sheet.deleteRow(i + 1); });
+    SpreadsheetApp.flush();
+  }
+  Logger.log('%s linha(s) %s.', apagar.length, executar ? 'apagada(s)' : 'seriam apagadas');
 }
 
 // =============================================================================
@@ -1557,13 +1641,7 @@ function diagnosticoExcecoesHoras() {
 
       const matricula = String(row[COL.MATRICULA] || '').trim();
       Logger.log('  INCLUÍDO por %s → "%s" (função "%s", matrícula "%s", nível "%s")',
-        regras.join(' + '), nome, funcao, matricula, nivelFromCell_(row[COL.NIVEL]));
-
-      // funcionariosFromRows_ descarta quem está sem matrícula — vale o alerta
-      if (!matricula) {
-        Logger.log('    ATENÇÃO: matrícula vazia no cadastro — mesmo elegível, "%s" NÃO aparece no app. ' +
-          'O DP precisa preencher a coluna AB.', nome);
-      }
+        regras.join(' + '), nome, funcao, matricula || '(vazia — não impede)', nivelFromCell_(row[COL.NIVEL]));
     }
 
     Logger.log('  Funções ativas encontradas em %s: %s', unidade,
@@ -1580,4 +1658,105 @@ function diagnosticoExcecoesHoras() {
         'e ajuste EXCECOES_FUNCAO_POR_UNIDADE_ / EXCECOES_NOME_POR_UNIDADE_.', unidade);
     }
   });
+}
+
+// "Por que fulano(a) não aparece no + Adicionar?" — refaz, para UMA pessoa, cada
+// descarte de funcionariosFromRows_ e diz qual deles a barrou. Rodar no editor do
+// Apps Script, com parte do nome (ou o apelido) e a unidade esperada:
+//   diagnosticoProfessorHoras('KIARA', 'RC')
+// Só lê e loga — não envia e-mail nem escreve em planilha nenhuma.
+function diagnosticoProfessorHoras(busca, unidade) {
+  const alvo = norm_(busca || '');
+  if (!alvo) {
+    Logger.log('Informe parte do nome ou o apelido: diagnosticoProfessorHoras("KIARA", "RC")');
+    return;
+  }
+
+  const rows = readFuncRows_();
+  const uEsperada = unidade ? canonUnidade_(unidade) : '';
+  let achou = 0;
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const nome    = String(row[COL.NOME] || '').trim();
+    const apelido = String(row[COL.APELIDO] || '').trim();
+    if (norm_(nome).indexOf(alvo) === -1 && norm_(apelido).indexOf(alvo) === -1) continue;
+    achou++;
+
+    const funcao    = String(row[COL.FUNCAO] || '').trim();
+    const ativo     = String(row[COL.ATIVO] || '').trim();
+    const matricula = String(row[COL.MATRICULA] || '').trim();
+    const uPrinc    = String(row[COL.UNIDADE] || '').trim();
+    const uSec      = String(row[COL.UNIDADE_SEC] || '').trim();
+
+    Logger.log('=== linha %s do cadastro: "%s" ===', i + 1, nome);
+    Logger.log('  apelido="%s" | função (col F)="%s" | ativo (col K)="%s" | matrícula (col AB)="%s" | nível (col AH)="%s"',
+      apelido, funcao, ativo, matricula || '(vazia — não impede)', nivelFromCell_(row[COL.NIVEL]));
+    Logger.log('  unidade (col V)="%s" → "%s" | unidade secundária (col AE)="%s" → "%s"',
+      uPrinc, canonUnidade_(uPrinc), uSec, canonUnidade_(uSec));
+
+    // Mesma sequência de descartes de funcionariosFromRows_, na mesma ordem
+    const motivos = [];
+    if (!nome) motivos.push('NOME (col C) vazio');
+    if (isInativo_(row[COL.ATIVO])) motivos.push('col K diz "' + ativo + '" — o app trata como INATIVO');
+    // matrícula vazia NÃO entra nos motivos: desde 06/08/2026 ela não é critério de entrada
+
+    const unidadesApp = [canonUnidade_(uPrinc), canonUnidade_(uSec)]
+      .filter(function(u, idx, arr) { return u && arr.indexOf(u) === idx; });
+    Logger.log('  unidades como o app enxerga: %s', unidadesApp.join(' | ') || '(nenhuma)');
+
+    // Célula com duas unidades ("EC NEW/RC"): canonUnidade_ NÃO separa, então o texto
+    // inteiro vira uma "unidade" que não casa com RC nem com EC NEW.
+    [uPrinc, uSec].forEach(function(u) {
+      if (u && /[\/,;|]/.test(u)) {
+        motivos.push('a célula "' + u + '" junta mais de uma unidade — o app lê o texto inteiro como UMA ' +
+          'unidade, que não casa com nenhuma das liberadas (o DP precisa deixar uma unidade em cada célula)');
+      }
+    });
+
+    if (uEsperada) {
+      if (unidadesApp.map(norm_).indexOf(norm_(uEsperada)) === -1) {
+        motivos.push('nenhuma das unidades acima é "' + uEsperada + '"');
+      } else if (!elegivelHoras_(row, uEsperada)) {
+        motivos.push('função "' + funcao + '" não é PROFESSOR nem exceção configurada para ' + uEsperada);
+      }
+    } else if (!unidadesApp.some(function(u) { return elegivelHoras_(row, u); })) {
+      motivos.push('função "' + funcao + '" não é PROFESSOR nem exceção em nenhuma das unidades dela');
+    }
+
+    if (motivos.length) {
+      Logger.log('  NÃO APARECE no app porque: %s.', motivos.join('; '));
+    } else {
+      Logger.log('  Passa por TODOS os filtros do cadastro — deveria aparecer%s.',
+        uEsperada ? ' em ' + uEsperada : '');
+      Logger.log('  Se ainda assim não está no "+ Adicionar": ela já tem lançamento no mês (o dropdown esconde ' +
+        'quem já foi lançado — veja a lista de lançamentos abaixo) ou o diretor não tem a unidade liberada no Hub.');
+    }
+  }
+
+  if (!achou) {
+    Logger.log('Nenhuma linha do cadastro tem "%s" no NOME (col C) nem no APELIDO (col G) — a pessoa pode estar ' +
+      'com outra grafia ou ainda não ter sido incluída na aba "RJ - UNIDADES".', busca);
+  }
+
+  // Lançamentos já existentes com esse nome (o dropdown esconde quem já foi lançado no mês)
+  const horas = getHorasSheet_().getDataRange().getValues();
+  const lancamentos = [];
+  for (let i = 1; i < horas.length; i++) {
+    const nomeH = String(horas[i][HORAS_COL.NOME] || '').trim();
+    if (norm_(nomeH).indexOf(alvo) === -1) continue;
+    lancamentos.push('    ' + canonUnidade_(horas[i][HORAS_COL.UNIDADE]) + ' — ' +
+      parseMes_(horas[i][HORAS_COL.MES]) + '/' + horas[i][HORAS_COL.ANO] + ' — "' + nomeH + '"');
+  }
+  Logger.log('--- Lançamentos já existentes na aba HORAS com "%s" no nome ---', busca);
+  Logger.log(lancamentos.length ? lancamentos.join('\n') : '    (nenhum)');
+
+  if (uEsperada) {
+    Logger.log('--- Quem o app lista hoje em %s ---', uEsperada);
+    const lista = funcionariosFromRows_([norm_(uEsperada)], rows).professores;
+    lista.forEach(function(p) {
+      Logger.log('    %s (%s) — matrícula %s, nível %s', p.nome, p.apelido || '-', p.matricula, p.nivel || '-');
+    });
+    if (!lista.length) Logger.log('    (nenhum)');
+  }
 }
